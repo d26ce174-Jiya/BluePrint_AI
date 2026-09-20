@@ -10,6 +10,17 @@
 [![Gemini](https://img.shields.io/badge/LLM-Google%20Gemini%202.0%2F3.6%20Flash-4285F4?logo=google)](https://ai.google.dev/)
 
 ---
+## 👥 Team & Acknowledgements
+- **Team Name**: Blueprint_AI
+- **Product**: Compile
+- **Team**:
+- **Dhruv Bhoi-D26CE154 [Leader]**: System Logic & System Architect
+- **Jiya Sheth-D26CE174**: AI Integration & UI/UX
+- **Kush Parekh-D26CE148**: Frontend & Backend
+- **Heet Doshi-D26CE169**: Technical Documentation
+- **Mentor**:Prof. Rikita Chokshi, CE,CSPIT,CHARUSAT
+- **Competition**: Chaos2Commit 2026
+- **License**: MIT
 
 ## 📋 Table of Contents
 1. [Project Overview](#-project-overview)
@@ -387,7 +398,3 @@ npm run db:init
 
 ---
 
-## 👥 Team & Acknowledgements
-- **Project**: BlueprintAI (Compile)
-- **Competition**: Chaos2Commit 2026
-- **License**: MIT
