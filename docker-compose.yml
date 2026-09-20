@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: compile_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: compile_db
+      MYSQL_USER: compile_user
+      MYSQL_PASSWORD: compile_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/src/db/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - compile_net
+
+networks:
+  compile_net:
+    driver: bridge
+
+volumes:
+  mysql_data:

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compile — Platform Wireframes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FAFAF8;
+    --line:#B7BCC4;
+    --line-dark:#7A818C;
+    --ink:#1C2024;
+    --muted:#8A909A;
+    --accent:#C75B2E;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+  }
+  .shell{display:flex;min-height:100vh;}
+
+  nav{
+    width:280px;
+    flex-shrink:0;
+    background:#F0F0EC;
+    border-right:1px solid var(--line);
+    padding:32px 20px;
+    position:sticky;
+    top:0;
+    height:100vh;
+    overflow-y:auto;
+  }
+  nav h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:20px;
+    margin:0 0 4px;
+  }
+  nav .sub{font-size:12.5px;color:var(--muted);margin-bottom:28px;}
+  .nav-item{
+    display:flex;
+    gap:10px;
+    align-items:baseline;
+    padding:10px 8px;
+    cursor:pointer;
+    border-left:2px solid transparent;
+    font-size:13.5px;
+  }
+  .nav-item .n{font-family:'Space Grotesk',sans-serif;color:var(--muted);font-size:12px;width:20px;flex-shrink:0;}
+  .nav-item.active{border-left-color:var(--accent);background:#E7E6E0;}
+  .nav-item.active .n{color:var(--accent);}
+  .nav-item:hover{background:#E7E6E0;}
+
+  main{flex:1;padding:40px 48px;max-width:1000px;}
+  .screen-label{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:13px;
+    color:var(--accent);
+    margin-bottom:6px;
+  }
+  main h2{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:28px;
+    margin:0 0 8px;
+  }
+  main .desc{color:var(--muted);font-size:14.5px;max-width:640px;margin:0 0 28px;}
+
+  .frame{
+    border:1px solid var(--line);
+    background:#fff;
+  }
+  .frame-bar{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:9px 12px;
+    border-bottom:1px solid var(--line);
+    background:#F4F4F1;
+  }
+  .frame-bar .dot{width:8px;height:8px;border-radius:50%;border:1px solid var(--line-dark);}
+  .frame-bar .url{
+    margin-left:12px;
+    font-size:11px;
+    color:var(--muted);
+    border:1px solid var(--line);
+    padding:3px 10px;
+    flex:1;
+  }
+  .frame-body{display:flex;min-height:460px;}
+  .app-side{
+    width:170px;
+    flex-shrink:0;
+    border-right:1px solid var(--line);
+    padding:16px 14px;
+  }
+  .app-side .bar{height:9px;background:var(--line);margin-bottom:10px;width:80%;}
+  .app-side .bar.short{width:55%;}
+  .app-side .item{
+    font-size:10.5px;
+    color:var(--muted);
+    padding:8px 0;
+    border-bottom:1px dashed #E2E2DE;
+  }
+  .app-content{flex:1;padding:22px;}
+
+  .ph-line{height:9px;background:var(--line);margin-bottom:9px;}
+  .ph-line.w60{width:60%;}
+  .ph-line.w80{width:80%;}
+  .ph-line.w40{width:40%;}
+  .ph-line.w90{width:90%;}
+  .ph-block{
+    border:1px dashed var(--line);
+    background:repeating-linear-gradient(45deg, #fff, #fff 8px, #F2F2EE 8px, #F2F2EE 16px);
+  }
+  .x-box{
+    border:1px solid var(--line);
+    position:relative;
+    background:#fff;
+  }
+  .x-box::before,.x-box::after{
+    content:'';
+    position:absolute;
+    top:0;left:0;
+    width:100%;height:100%;
+    background: linear-gradient(to top left, transparent calc(50% - 0.5px), var(--line) 50%, transparent calc(50% + 0.5px)),
+                linear-gradient(to top right, transparent calc(50% - 0.5px), var(--line) 50%, transparent calc(50% + 0.5px));
+  }
+  .btn-wire{
+    display:inline-block;
+    border:1px solid var(--line-dark);
+    padding:7px 16px;
+    font-size:11.5px;
+    color:var(--ink);
+  }
+  .row{display:flex;gap:14px;}
+  .col{flex:1;}
+  .card-wire{border:1px solid var(--line);padding:14px;}
+  .label-tag{
+    font-size:9.5px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    margin-bottom:8px;
+    display:block;
+  }
+  .tree-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .node{width:26px;height:26px;border:1px solid var(--line-dark);flex-shrink:0;}
+  .conn{width:24px;height:1px;background:var(--line-dark);}
+  .swim{border:1px solid var(--line);height:70px;position:relative;margin-bottom:8px;}
+  .swim .lane-label{font-size:9px;color:var(--muted);position:absolute;top:4px;left:6px;}
+  table.wire-table{width:100%;border-collapse:collapse;font-size:11px;}
+  table.wire-table th,table.wire-table td{border:1px solid var(--line);padding:8px;text-align:left;}
+  table.wire-table th{background:#F4F4F1;color:var(--muted);font-weight:600;font-size:10px;}
+
+  .screen{display:none;}
+  .screen.active{display:block;}
+  footer{padding:24px 48px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);}
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav>
+    <h1>Compile</h1>
+    <div class="sub">Platform wireframes — 9 core modules</div>
+    <div id="navList"></div>
+  </nav>
+  <main id="mainArea"></main>
+</div>
+<footer>Low-fidelity wireframes — layout &amp; structure only, not final visual design. Business Transformation AI (AI Solution Builder) · Chaos2Commit 2026</footer>
+
+<script>
+const modules = [
+  {
+    key: "consulting",
+    title: "AI Business Consulting",
+    desc: "Conversational discovery: the AI Business Consultant asks validating questions, surfaces best practices, and recommends AI adoption and automation opportunities.",
+    body: `
+      <div class="row" style="height:100%;">
+        <div class="col" style="flex:1.4;">
+          <span class="label-tag">Discovery conversation</span>
+          <div class="card-wire" style="margin-bottom:10px;">
+            <div class="ph-line w90"></div><div class="ph-line w80"></div>
+          </div>
+          <div class="card-wire" style="margin-bottom:10px; margin-left:40px;">
+            <div class="ph-line w60"></div>
+          </div>
+          <div class="card-wire" style="margin-bottom:10px;">
+            <div class="ph-line w90"></div><div class="ph-line w40"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px;">
+            <div class="ph-block" style="flex:1;height:34px;"></div>
+            <span class="btn-wire">Send</span>
+          </div>
+        </div>
+        <div class="col">
+          <span class="label-tag">Recommendations panel</span>
+          <div class="card-wire" style="margin-bottom:8px;"><div class="ph-line w80"></div><div class="ph-line w60"></div></div>
+          <div class="card-wire" style="margin-bottom:8px;"><div class="ph-line w80"></div><div class="ph-line w60"></div></div>
+          <div class="card-wire"><div class="ph-line w80"></div><div class="ph-line w60"></div></div>
+        </div>
+      </div>`
+  },
+  {
+    key: "analysis",
+    title: "Business Analysis",
+    desc: "The Business Analysis Engine runs requirement discovery, gap analysis, stakeholder analysis, and current vs. future-state comparison.",
+    body: `
+      <span class="label-tag">Current state vs. future state</span>
+      <div class="row" style="margin-bottom:18px;">
+        <div class="col card-wire">
+          <div class="ph-line w40"></div>
+          <div class="ph-block" style="height:120px;margin-top:8px;"></div>
+        </div>
+        <div class="col card-wire">
+          <div class="ph-line w40"></div>
+          <div class="ph-block" style="height:120px;margin-top:8px;"></div>
+        </div>
+      </div>
+      <span class="label-tag">Identified gaps</span>
+      <table class="wire-table">
+        <tr><th>Area</th><th>Gap</th><th>Priority</th></tr>
+        <tr><td><div class="ph-line w60"></div></td><td><div class="ph-line w80"></div></td><td><div class="ph-line w40"></div></td></tr>
+        <tr><td><div class="ph-line w60"></div></td><td><div class="ph-line w80"></div></td><td><div class="ph-line w40"></div></td></tr>
+        <tr><td><div class="ph-line w60"></div></td><td><div class="ph-line w80"></div></td><td><div class="ph-line w40"></div></td></tr>
+      </table>`
+  },
+  {
+    key: "architecture",
+    title: "Solution Architecture",
+    desc: "Solution Architecture Builder recommends HLD/LLD, integration, infrastructure, cloud, and deployment architecture as an editable diagram canvas.",
+    body: `
+      <span class="label-tag">Architecture canvas — HLD</span>
+      <div class="card-wire" style="height:280px;position:relative;">
+        <div class="tree-row" style="justify-content:center;"><div class="node"></div></div>
+        <div class="tree-row" style="justify-content:center;gap:24px;">
+          <div class="node"></div><div class="node"></div><div class="node"></div>
+        </div>
+        <div class="tree-row" style="justify-content:center;gap:12px;">
+          <div class="node"></div><div class="node"></div><div class="node"></div><div class="node"></div>
+        </div>
+        <div class="ph-line w40" style="margin:20px auto 0;"></div>
+      </div>
+      <div class="row" style="margin-top:14px;">
+        <span class="btn-wire">HLD</span><span class="btn-wire">LLD</span><span class="btn-wire">Export</span>
+      </div>`
+  },
+  {
+    key: "process",
+    title: "Process Intelligence",
+    desc: "Process Intelligence Designer creates business workflows, BPMN diagrams, swimlane diagrams, and approval workflows.",
+    body: `
+      <span class="label-tag">Swimlane workflow</span>
+      <div class="swim"><span class="lane-label">Requester</span></div>
+      <div class="swim"><span class="lane-label">Approver</span></div>
+      <div class="swim"><span class="lane-label">System</span></div>
+      <div class="row" style="margin-top:16px;">
+        <span class="btn-wire">Add step</span><span class="btn-wire">Add decision</span><span class="btn-wire">Regenerate</span>
+      </div>`
+  },
+  {
+    key: "docs",
+    title: "Documentation Generation",
+    desc: "Auto-generates BRDs and supporting documentation from the discovery conversation, exportable to PDF, Word, Excel, or PPT.",
+    body: `
+      <div class="row">
+        <div class="col" style="flex:0 0 220px;">
+          <span class="label-tag">Document outline</span>
+          <div class="card-wire item" style="margin-bottom:6px;"><div class="ph-line w80"></div></div>
+          <div class="card-wire item" style="margin-bottom:6px; margin-left:14px;"><div class="ph-line w60"></div></div>
+          <div class="card-wire item" style="margin-bottom:6px; margin-left:14px;"><div class="ph-line w60"></div></div>
+          <div class="card-wire item" style="margin-bottom:6px;"><div class="ph-line w80"></div></div>
+        </div>
+        <div class="col card-wire">
+          <span class="label-tag">Document preview — BRD.docx</span>
+          <div class="ph-line w40"></div>
+          <div class="ph-line w90"></div><div class="ph-line w90"></div><div class="ph-line w60"></div>
+          <div class="ph-line w40" style="margin-top:14px;"></div>
+          <div class="ph-line w90"></div><div class="ph-line w80"></div>
+          <div style="margin-top:16px;"><span class="btn-wire">Export PDF</span> <span class="btn-wire">Export Word</span></div>
+        </div>
+      </div>`
+  },
+  {
+    key: "ux",
+    title: "Wireframe Design",
+    desc: "AI UX Designer generates wireframes, dashboard concepts, navigation flows, and screen concepts from the recommended solution.",
+    body: `
+      <span class="label-tag">Generated screen concepts</span>
+      <div class="row">
+        <div class="col"><div class="x-box" style="height:150px;"></div><div class="ph-line w60" style="margin-top:8px;"></div></div>
+        <div class="col"><div class="x-box" style="height:150px;"></div><div class="ph-line w60" style="margin-top:8px;"></div></div>
+        <div class="col"><div class="x-box" style="height:150px;"></div><div class="ph-line w60" style="margin-top:8px;"></div></div>
+      </div>
+      <div class="row" style="margin-top:14px;">
+        <span class="btn-wire">Regenerate</span><span class="btn-wire">Edit flow</span>
+      </div>`
+  },
+  {
+    key: "database",
+    title: "Database & API Design",
+    desc: "Database & Integration Designer recommends ER diagrams, schema, data models, REST APIs, and integration architecture.",
+    body: `
+      <div class="row">
+        <div class="col card-wire">
+          <span class="label-tag">ER diagram</span>
+          <div class="tree-row"><div class="node"></div><div class="conn"></div><div class="node"></div></div>
+          <div class="tree-row" style="margin-left:34px;"><div class="conn"></div><div class="node"></div></div>
+        </div>
+        <div class="col card-wire">
+          <span class="label-tag">REST endpoints</span>
+          <table class="wire-table">
+            <tr><th>Method</th><th>Endpoint</th></tr>
+            <tr><td>GET</td><td><div class="ph-line w80"></div></td></tr>
+            <tr><td>POST</td><td><div class="ph-line w80"></div></td></tr>
+            <tr><td>PUT</td><td><div class="ph-line w80"></div></td></tr>
+          </table>
+        </div>
+      </div>`
+  },
+  {
+    key: "estimation",
+    title: "Estimation",
+    desc: "AI Planning Engine produces effort estimates, cost estimation, resource planning, and sprint/release timelines.",
+    body: `
+      <span class="label-tag">Effort & cost estimate</span>
+      <table class="wire-table" style="margin-bottom:18px;">
+        <tr><th>Module</th><th>Effort (days)</th><th>Cost</th></tr>
+        <tr><td><div class="ph-line w60"></div></td><td><div class="ph-line w40"></div></td><td><div class="ph-line w40"></div></td></tr>
+        <tr><td><div class="ph-line w60"></div></td><td><div class="ph-line w40"></div></td><td><div class="ph-line w40"></div></td></tr>
+        <tr><td><div class="ph-line w60"></div></td><td><div class="ph-line w40"></div></td><td><div class="ph-line w40"></div></td></tr>
+      </table>
+      <span class="label-tag">Sprint timeline</span>
+      <div class="row">
+        <div class="ph-block col" style="height:26px;"></div>
+        <div class="ph-block col" style="height:26px;"></div>
+        <div class="ph-block col" style="height:26px;"></div>
+        <div class="ph-block col" style="height:26px;"></div>
+      </div>`
+  },
+  {
+    key: "planning",
+    title: "Digital Transformation Planning",
+    desc: "Transformation Planner generates AI adoption, modernization, cloud migration, and change-management roadmaps.",
+    body: `
+      <span class="label-tag">Transformation roadmap</span>
+      <div class="card-wire" style="padding:24px;">
+        <div class="row" style="align-items:flex-end;">
+          <div class="col" style="text-align:center;">
+            <div class="node" style="margin:0 auto 8px;"></div>
+            <div class="ph-line w60" style="margin:0 auto;"></div>
+          </div>
+          <div class="col" style="text-align:center;">
+            <div class="node" style="margin:0 auto 8px;"></div>
+            <div class="ph-line w60" style="margin:0 auto;"></div>
+          </div>
+          <div class="col" style="text-align:center;">
+            <div class="node" style="margin:0 auto 8px;"></div>
+            <div class="ph-line w60" style="margin:0 auto;"></div>
+          </div>
+          <div class="col" style="text-align:center;">
+            <div class="node" style="margin:0 auto 8px;"></div>
+            <div class="ph-line w60" style="margin:0 auto;"></div>
+          </div>
+        </div>
+        <div style="height:1px;background:var(--line-dark);margin-top:14px;"></div>
+      </div>
+      <div class="row" style="margin-top:14px;">
+        <span class="btn-wire">Adjust phases</span><span class="btn-wire">Export roadmap</span>
+      </div>`
+  }
+];
+
+const navList = document.getElementById('navList');
+const mainArea = document.getElementById('mainArea');
+
+modules.forEach((m, i) => {
+  const nav = document.createElement('div');
+  nav.className = 'nav-item' + (i === 0 ? ' active' : '');
+  nav.dataset.key = m.key;
+  nav.innerHTML = `<span class="n">${String(i+1).padStart(2,'0')}</span><span>${m.title}</span>`;
+  nav.onclick = () => showScreen(m.key);
+  navList.appendChild(nav);
+
+  const screen = document.createElement('div');
+  screen.className = 'screen' + (i === 0 ? ' active' : '');
+  screen.id = 'screen-' + m.key;
+  screen.innerHTML = `
+    <div class="screen-label">SHEET ${String(i+1).padStart(2,'0')}/09</div>
+    <h2>${m.title}</h2>
+    <p class="desc">${m.desc}</p>
+    <div class="frame">
+      <div class="frame-bar">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="url">compile.app / ${m.key}</div>
+      </div>
+      <div class="frame-body">
+        <div class="app-side">
+          <div class="bar"></div><div class="bar short"></div>
+          ${modules.map((mm,idx)=>`<div class="item" style="${mm.key===m.key?'color:var(--ink);font-weight:600;':''}">${mm.title}</div>`).join('')}
+        </div>
+        <div class="app-content">${m.body}</div>
+      </div>
+    </div>
+  `;
+  mainArea.appendChild(screen);
+});
+
+function showScreen(key){
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.key === key));
+  document.querySelectorAll('.screen').forEach(el => el.classList.toggle('active', el.id === 'screen-' + key));
+}
+</script>
+</body>
+</html>

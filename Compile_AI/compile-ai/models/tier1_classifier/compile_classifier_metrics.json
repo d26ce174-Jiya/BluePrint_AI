@@ -1,0 +1,27 @@
+{
+  "industry": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "n_classes": 25
+  },
+  "company_size_tag": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "n_classes": 4
+  },
+  "problem_title": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "n_classes": 20
+  },
+  "budget_band": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "n_classes": 5
+  },
+  "cost_band": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "n_classes": 3
+  }
+}

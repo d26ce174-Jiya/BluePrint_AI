@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compile — Business Transformation AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-deep:#0A1F3D;
+    --bg-panel:#0F294E;
+    --bg-panel-2:#12305A;
+    --line-cyan:#4FA8D8;
+    --line-cyan-dim:rgba(79,168,216,0.22);
+    --accent-amber:#E8A33D;
+    --text-primary:#EDEFF3;
+    --text-muted:#8FA3C4;
+    --danger:#E8734D;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      repeating-linear-gradient(0deg, var(--line-cyan-dim) 0px, transparent 1px, transparent 32px, var(--line-cyan-dim) 33px),
+      repeating-linear-gradient(90deg, var(--line-cyan-dim) 0px, transparent 1px, transparent 32px, var(--line-cyan-dim) 33px),
+      var(--bg-deep);
+    color:var(--text-primary);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    line-height:1.5;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:64px 24px 96px;}
+
+  /* corner-bracket blueprint frame, used for the input panel and result cards */
+  .plate{
+    position:relative;
+    background:var(--bg-panel);
+    border:1px solid var(--line-cyan-dim);
+    padding:32px;
+  }
+  .plate::before,.plate::after,
+  .plate .tick-br,.plate .tick-tr{
+    content:'';
+    position:absolute;
+    width:14px;height:14px;
+    border-color:var(--line-cyan);
+    border-style:solid;
+    border-width:0;
+  }
+  .plate::before{top:-1px;left:-1px;border-top-width:2px;border-left-width:2px;}
+  .plate::after{bottom:-1px;left:-1px;border-bottom-width:2px;border-left-width:2px;}
+  .plate .tick-tr{top:-1px;right:-1px;border-top-width:2px;border-right-width:2px;}
+  .plate .tick-br{bottom:-1px;right:-1px;border-bottom-width:2px;border-right-width:2px;}
+
+  header{margin-bottom:48px;}
+  .kicker{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:13px;
+    letter-spacing:.04em;
+    color:var(--line-cyan);
+    margin:0 0 14px;
+  }
+  h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:52px;
+    line-height:1.05;
+    margin:0 0 18px;
+    color:var(--text-primary);
+  }
+  .tagline{
+    font-size:18px;
+    color:var(--text-muted);
+    max-width:560px;
+    margin:0;
+  }
+
+  .input-label{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:15px;
+    color:var(--text-primary);
+    margin:0 0 12px;
+    display:block;
+  }
+  textarea{
+    width:100%;
+    min-height:140px;
+    background:var(--bg-deep);
+    border:1px solid var(--line-cyan-dim);
+    color:var(--text-primary);
+    font-family:'Inter',sans-serif;
+    font-size:15px;
+    padding:16px;
+    resize:vertical;
+    outline:none;
+  }
+  textarea:focus{border-color:var(--line-cyan);}
+  textarea::placeholder{color:#5C7396;}
+
+  .row{display:flex;justify-content:space-between;align-items:center;margin-top:18px;flex-wrap:wrap;gap:12px;}
+  .hint{font-size:13px;color:var(--text-muted);}
+
+  button.generate{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:15px;
+    font-weight:600;
+    background:var(--accent-amber);
+    color:#1A1200;
+    border:none;
+    padding:13px 26px;
+    cursor:pointer;
+    transition:transform .12s ease, background .12s ease;
+  }
+  button.generate:hover{background:#F0B558;}
+  button.generate:active{transform:scale(.98);}
+  button.generate:disabled{background:#5C7396;cursor:not-allowed;}
+
+  .examples{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;}
+  .example-chip{
+    font-size:12.5px;
+    color:var(--line-cyan);
+    background:transparent;
+    border:1px solid var(--line-cyan-dim);
+    padding:6px 12px;
+    cursor:pointer;
+  }
+  .example-chip:hover{border-color:var(--line-cyan);}
+
+  #status{margin-top:20px;font-size:14px;color:var(--text-muted);display:none;}
+  #status.show{display:block;}
+  #errorBox{margin-top:20px;font-size:14px;color:var(--danger);display:none;}
+  #errorBox.show{display:block;}
+
+  #results{margin-top:56px;display:none;}
+  #results.show{display:block;}
+
+  .section-title{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:14px;
+    color:var(--line-cyan);
+    margin:0 0 28px;
+    padding-bottom:12px;
+    border-bottom:1px solid var(--line-cyan-dim);
+  }
+
+  .card{margin-bottom:20px;}
+  .card h3{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:16px;
+    margin:0 0 12px;
+    color:var(--text-primary);
+  }
+  .card p{font-size:14.5px;color:var(--text-muted);margin:0;}
+  .card ul{margin:0;padding-left:18px;}
+  .card li{font-size:14.5px;color:var(--text-muted);margin-bottom:6px;}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  @media(max-width:680px){
+    h1{font-size:38px;}
+    .grid2{grid-template-columns:1fr;}
+    .wrap{padding:40px 18px 72px;}
+  }
+
+  .stack-tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+  .stack-tag{
+    font-size:12.5px;
+    color:var(--text-primary);
+    background:var(--bg-panel-2);
+    border:1px solid var(--line-cyan-dim);
+    padding:5px 10px;
+  }
+
+  .metric-row{display:flex;gap:28px;flex-wrap:wrap;margin-top:8px;}
+  .metric{}
+  .metric .num{font-family:'Space Grotesk',sans-serif;font-size:26px;color:var(--accent-amber);}
+  .metric .lbl{font-size:12.5px;color:var(--text-muted);}
+
+  footer{margin-top:64px;font-size:13px;color:var(--text-muted);border-top:1px solid var(--line-cyan-dim);padding-top:20px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="kicker">Business Transformation AI — working prototype</p>
+    <h1>Compile</h1>
+    <p class="tagline">Describe a business problem in plain language. Compile turns it into a structured solution blueprint — architecture, stack, and roadmap — in under a minute.</p>
+  </header>
+
+  <div class="plate">
+    <div class="tick-tr"></div><div class="tick-br"></div>
+    <label class="input-label" for="ideaInput">What's the business idea, challenge, or rough notes?</label>
+    <textarea id="ideaInput" placeholder="e.g. Our sales team manually re-enters lead data from call notes into three different tools, and it takes hours every week..."></textarea>
+    <div class="examples">
+      <button class="example-chip" onclick="useExample(0)">Manual sales data entry</button>
+      <button class="example-chip" onclick="useExample(1)">Slow customer support triage</button>
+      <button class="example-chip" onclick="useExample(2)">Paper-based inventory tracking</button>
+    </div>
+    <div class="row">
+      <span class="hint">Takes about 20–30 seconds</span>
+      <button class="generate" id="genBtn" onclick="generateBlueprint()">Generate blueprint</button>
+    </div>
+    <div id="status">Analyzing business context and drafting the blueprint…</div>
+    <div id="errorBox">Something went wrong generating the blueprint. Please try again.</div>
+  </div>
+
+  <div id="results">
+    <p class="section-title">Solution blueprint</p>
+
+    <div class="plate card">
+      <div class="tick-tr"></div><div class="tick-br"></div>
+      <h3>Problem summary</h3>
+      <p id="out-problem"></p>
+    </div>
+
+    <div class="plate card">
+      <div class="tick-tr"></div><div class="tick-br"></div>
+      <h3>Recommended solution</h3>
+      <p id="out-solution"></p>
+    </div>
+
+    <div class="grid2">
+      <div class="plate card">
+        <div class="tick-tr"></div><div class="tick-br"></div>
+        <h3>Architecture overview</h3>
+        <p id="out-architecture"></p>
+      </div>
+      <div class="plate card">
+        <div class="tick-tr"></div><div class="tick-br"></div>
+        <h3>Suggested tech stack</h3>
+        <div class="stack-tags" id="out-stack"></div>
+      </div>
+    </div>
+
+    <div class="plate card">
+      <div class="tick-tr"></div><div class="tick-br"></div>
+      <h3>Rollout roadmap</h3>
+      <ul id="out-roadmap"></ul>
+    </div>
+
+    <div class="grid2">
+      <div class="plate card">
+        <div class="tick-tr"></div><div class="tick-br"></div>
+        <h3>Business value</h3>
+        <div class="metric-row" id="out-metrics"></div>
+      </div>
+      <div class="plate card">
+        <div class="tick-tr"></div><div class="tick-br"></div>
+        <h3>Revenue model</h3>
+        <p id="out-revenue"></p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Compile — built by Team Blueprint AI for Chaos2Commit 2026 · Business Transformation AI problem statement
+  </footer>
+</div>
+
+<script>
+const examples = [
+  "Our sales team manually re-enters lead data from call notes into three different tools every week, causing delays and data mismatches.",
+  "Customers wait 2-3 days for a first response on support tickets because requests aren't automatically routed to the right team.",
+  "Our warehouse still tracks inventory on paper checklists, so stock counts are often outdated by the time they reach the ordering team."
+];
+function useExample(i){
+  document.getElementById('ideaInput').value = examples[i];
+}
+
+/*
+  DEMO MODE — no network calls.
+  This build runs fully offline so it works reliably for recording/presenting:
+  no API key required, no CORS issues, no risk of a failed call mid-demo.
+  The three example prompts return realistic, pre-built blueprints.
+  Any other typed-in text falls through to a template engine that still
+  reflects back what was typed, so the "custom input" path still feels live.
+
+  To wire this up to a REAL AI backend later (e.g. after the hackathon,
+  with your own API key on a server), replace the body of generateBlueprint()
+  with a fetch() call to your own backend endpoint — never call the
+  Anthropic API directly from client-side code with an embedded key.
+*/
+
+const cannedResults = [
+  {
+    problem_summary: "Sales reps spend hours each week manually copying lead data from call notes into three separate CRM and reporting tools, creating delays and inconsistent records across teams.",
+    solution: "An AI-powered intake layer automatically extracts structured lead data from call notes or transcripts and syncs it across every connected tool in real time.",
+    architecture: "An ingestion service parses call notes using NLP, a sync engine pushes normalized records to each connected tool through their APIs, and a lightweight dashboard flags any sync conflicts for manual review.",
+    tech_stack: ["Node.js backend", "React frontend", "LLM API for extraction", "REST integrations", "PostgreSQL"],
+    roadmap: ["Phase 1: Note parsing + single CRM sync", "Phase 2: Multi-tool sync and conflict detection", "Phase 3: Reporting dashboard and analytics"],
+    time_saved_percent: "65%",
+    payback_months: "3",
+    revenue_model: "Per-seat SaaS subscription for sales teams, with a usage-based add-on for high-volume call centers."
+  },
+  {
+    problem_summary: "Support tickets aren't automatically routed to the right team, leaving customers waiting 2-3 days for a first response and overloading generalist agents.",
+    solution: "An AI triage layer classifies incoming tickets by intent and urgency, then automatically routes each one to the correct specialist team.",
+    architecture: "An ingestion layer pulls tickets from the helpdesk API, an AI classification layer scores intent, urgency, and team fit, and a routing engine assigns tickets and notifies the right queue instantly.",
+    tech_stack: ["Python backend", "LLM classification API", "Helpdesk API integration", "Redis queue", "React dashboard"],
+    roadmap: ["Phase 1: Ticket classification model + routing rules", "Phase 2: Auto-routing integration with helpdesk", "Phase 3: Feedback loop to improve routing accuracy"],
+    time_saved_percent: "70%",
+    payback_months: "2",
+    revenue_model: "Tiered subscription based on ticket volume, plus an enterprise tier with custom routing rules."
+  },
+  {
+    problem_summary: "Warehouse stock is tracked on paper checklists, so inventory counts are frequently outdated by the time they reach the ordering team, leading to stockouts and overordering.",
+    solution: "A mobile-first digital inventory capture tool with barcode scanning syncs stock counts to a central system in real time.",
+    architecture: "A mobile app captures counts via barcode scan, an API layer validates and syncs data to a central inventory database, and an alerting service flags low-stock items to the ordering team automatically.",
+    tech_stack: ["React Native app", "Barcode scanning SDK", "Node.js API", "PostgreSQL", "Real-time webhook alerts"],
+    roadmap: ["Phase 1: Mobile scanning + central database", "Phase 2: Real-time low-stock alerts", "Phase 3: Predictive reorder recommendations"],
+    time_saved_percent: "55%",
+    payback_months: "4",
+    revenue_model: "Per-warehouse subscription pricing, with an add-on for predictive reorder analytics."
+  }
+];
+
+function genericResult(input){
+  return {
+    problem_summary: `Based on what was described — "${input}" — the core issue is a manual, error-prone process that consumes staff time and creates inconsistent outcomes.`,
+    solution: "An AI-powered automation layer that handles the repetitive parts of this process, flags exceptions for human review, and keeps data consistent across systems.",
+    architecture: "An ingestion layer captures the relevant input, an AI reasoning layer analyzes and structures it, and an output layer syncs results to the tools the team already uses.",
+    tech_stack: ["React frontend", "Node.js backend", "LLM API", "Cloud database", "REST APIs"],
+    roadmap: ["Phase 1: Core automation for the primary workflow", "Phase 2: Integrations with existing tools", "Phase 3: Analytics and continuous improvement"],
+    time_saved_percent: "50%",
+    payback_months: "3",
+    revenue_model: "Subscription pricing tiered by team size, with a usage-based option for high-volume customers."
+  };
+}
+
+function generateBlueprint(){
+  const input = document.getElementById('ideaInput').value.trim();
+  const btn = document.getElementById('genBtn');
+  const status = document.getElementById('status');
+  const errorBox = document.getElementById('errorBox');
+  const results = document.getElementById('results');
+
+  errorBox.classList.remove('show');
+  if(!input){
+    errorBox.textContent = 'Please describe a business problem first.';
+    errorBox.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  status.classList.add('show');
+  results.classList.remove('show');
+
+  // Simulate realistic "thinking" time so the demo still feels alive
+  setTimeout(() => {
+    try{
+      const exampleIndex = examples.indexOf(input);
+      const parsed = exampleIndex !== -1 ? cannedResults[exampleIndex] : genericResult(input);
+      renderResults(parsed);
+      results.classList.add('show');
+    }catch(err){
+      console.error('Blueprint generation error:', err);
+      errorBox.textContent = 'Something went wrong generating the blueprint. Please try again.';
+      errorBox.classList.add('show');
+    }finally{
+      btn.disabled = false;
+      status.classList.remove('show');
+    }
+  }, 1800);
+}
+
+function renderResults(d){
+  document.getElementById('out-problem').textContent = d.problem_summary || '—';
+  document.getElementById('out-solution').textContent = d.solution || '—';
+  document.getElementById('out-architecture').textContent = d.architecture || '—';
+  document.getElementById('out-revenue').textContent = d.revenue_model || '—';
+
+  const stackEl = document.getElementById('out-stack');
+  stackEl.innerHTML = '';
+  (d.tech_stack || []).forEach(tag=>{
+    const span = document.createElement('span');
+    span.className = 'stack-tag';
+    span.textContent = tag;
+    stackEl.appendChild(span);
+  });
+
+  const roadmapEl = document.getElementById('out-roadmap');
+  roadmapEl.innerHTML = '';
+  (d.roadmap || []).forEach(step=>{
+    const li = document.createElement('li');
+    li.textContent = step;
+    roadmapEl.appendChild(li);
+  });
+
+  const metricsEl = document.getElementById('out-metrics');
+  metricsEl.innerHTML = `
+    <div class="metric">
+      <div class="num">${d.time_saved_percent || '—'}</div>
+      <div class="lbl">Estimated time saved</div>
+    </div>
+    <div class="metric">
+      <div class="num">${d.payback_months || '—'}mo</div>
+      <div class="lbl">Estimated payback period</div>
+    </div>
+  `;
+}
+</script>
+</body>
+</html>
