@@ -39,7 +39,7 @@ export const env = {
 
   // 3. Google Gemini
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-  GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+  GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
 
   // 4. Groq
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
@@ -53,4 +53,8 @@ export const env = {
   // 6. Ollama (Self-hosted / Local)
   OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
   OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'llama3.2',
+
+  // Payment Gateway (Razorpay)
+  RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || 'rzp_test_blueprint2026',
+  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || 'secret_blueprint_secure_2026',
 };

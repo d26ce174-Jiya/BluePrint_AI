@@ -120,7 +120,7 @@ When an evaluator reviews the platform, this is the exact flow to experience:
 ```
 
 1. **Intake (`/input`)**:
-   - The user inputs raw requirements (e.g. *"Krishi Solar: Automate solar subsidy approval for farmers"* or uploads an operational SOP).
+   - The user inputs raw requirements (e.g. *"Smart Citizen E-Governance: Automate public grievance redressal and civic certificate issuance"* or uploads an operational SOP).
    - The client analyzer classifies the domain, industry, complexity, and initial entity candidates.
 
 2. **AI Discovery Q&A (`/discovery/:id`)**:

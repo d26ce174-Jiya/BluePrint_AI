@@ -1,4 +1,5 @@
 import { SessionModel } from '../models/Session.js';
+import { UserModel } from '../models/User.js';
 import { InputDocumentModel } from '../models/InputDocument.js';
 import { BusinessContextModel } from '../models/BusinessContext.js';
 import { DiscoveryQaModel } from '../models/DiscoveryQa.js';
@@ -29,9 +30,21 @@ export const sessionController = {
     }
   },
 
-  // 2. Create new session
+  // 2. Create new session (Costs 1 Coin per generation)
   async createSession(req, res, next) {
     try {
+      // 0. Enforce 1 Coin per Generation
+      const userCredits = await UserModel.getCredits(req.user.userId);
+      if (userCredits < 1) {
+        return res.status(402).json({
+          success: false,
+          error: 'INSUFFICIENT_CREDITS',
+          message: 'You have used all your coins (0 coins available). Please recharge on the Pricing page to generate blueprints.',
+          redirect: '/pricing',
+          currentCredits: userCredits,
+        });
+      }
+
       const { title = 'New Transformation Blueprint', initialText = '' } = req.body;
       const session = await SessionModel.create({
         workspaceId: req.user.workspaceId,
@@ -71,8 +84,12 @@ export const sessionController = {
         initialSummary = initialText.trim().slice(0, 140);
       }
 
+      // Deduct 1 coin atomically from MySQL
+      const deduction = await UserModel.deductCredit(req.user.userId, 1);
+
       res.status(201).json({
         success: true,
+        remainingCredits: deduction.remainingCredits,
         session: {
           ...session,
           summary: initialSummary || 'Fresh blueprint session initialized.',
@@ -181,7 +198,7 @@ export const sessionController = {
       const [brdData, archData, estData] = await Promise.all([
         businessAnalysis.generateBrd({ rawInput, context, answeredQa: qas }),
         solutionArchitecture.generateArchitecture({ brd: {}, context, rawInput, sessionTitle: session.title }),
-        estimation.generateEstimate({ brd: {}, architecture: {}, rawInput, context }),
+        estimation.generateEstimate({ brd: {}, architecture: {}, rawInput, context, discoveryAnswers: qas }),
       ]);
 
       // Persist generated records to MySQL
@@ -210,9 +227,20 @@ export const sessionController = {
     }
   },
 
-  // 6. Regenerate single section (FR-6.2)
+  // 6. Regenerate single section (Costs 1 Coin per generation)
   async regenerateSection(req, res, next) {
     try {
+      const userCredits = await UserModel.getCredits(req.user.userId);
+      if (userCredits < 1) {
+        return res.status(402).json({
+          success: false,
+          error: 'INSUFFICIENT_CREDITS',
+          message: 'You have used all your coins. Please recharge on the Pricing page to regenerate sections.',
+          redirect: '/pricing',
+          currentCredits: userCredits,
+        });
+      }
+
       const { id: sessionId, section } = req.params; // section = 'brd' | 'architecture' | 'estimate'
       const rawInput = await InputDocumentModel.getAllParsedText(sessionId);
       const context = await BusinessContextModel.findBySessionId(sessionId);
@@ -228,7 +256,8 @@ export const sessionController = {
       } else if (section === 'estimate') {
         const brd = await BrdModel.findBySessionId(sessionId);
         const arch = await SolutionArchitectureModel.findBySessionId(sessionId);
-        const data = await estimation.generateEstimate({ brd, architecture: arch });
+        const qas = await DiscoveryQaModel.findBySessionId(sessionId);
+        const data = await estimation.generateEstimate({ brd, architecture: arch, rawInput, context, discoveryAnswers: qas });
         updated = await EffortEstimateModel.upsert({ sessionId, ...data });
       } else {
         return res.status(400).json({ success: false, message: 'Invalid section' });
@@ -240,7 +269,8 @@ export const sessionController = {
         snapshotData: { section, data: updated },
       });
 
-      res.json({ success: true, section, data: updated });
+      const deduction = await UserModel.deductCredit(req.user.userId, 1);
+      res.json({ success: true, section, data: updated, remainingCredits: deduction.remainingCredits });
     } catch (err) {
       next(err);
     }

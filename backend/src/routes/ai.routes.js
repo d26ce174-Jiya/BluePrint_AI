@@ -93,4 +93,84 @@ router.post('/analyze', async (req, res) => {
   }
 });
 
+// POST /api/ai/scrape-url - real web scraper extracting text, headings & metadata
+router.post('/scrape-url', async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ success: false, message: 'Valid URL is required' });
+    }
+
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`);
+    } catch {
+      return res.status(400).json({ success: false, message: 'Invalid URL format' });
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 9000);
+
+    const response = await fetch(parsedUrl.href, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return res.status(400).json({
+        success: false,
+        message: `Remote server returned HTTP ${response.status}: ${response.statusText}`
+      });
+    }
+
+    const html = await response.text();
+
+    // Extract title
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const pageTitle = titleMatch ? titleMatch[1].trim() : parsedUrl.hostname;
+
+    // Extract meta description
+    const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
+                          html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
+    const metaDesc = metaDescMatch ? metaDescMatch[1].trim() : '';
+
+    // Extract text from body
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    const bodyContent = bodyMatch ? bodyMatch[1] : html;
+
+    const cleaned = bodyContent
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+      .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, ' ')
+      .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const excerpt = cleaned.slice(0, 1800);
+
+    res.json({
+      success: true,
+      url: parsedUrl.href,
+      title: pageTitle,
+      description: metaDesc,
+      extractedContent: `[Scraped from: ${parsedUrl.href}]\nTitle: ${pageTitle}\n${metaDesc ? `Summary: ${metaDesc}\n` : ''}\nContent:\n${excerpt}`
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.name === 'AbortError' ? 'URL request timed out after 9 seconds' : `Could not scrape URL: ${err.message}`
+    });
+  }
+});
+
 export default router;

@@ -24,6 +24,9 @@ Final Output
 
 import os
 import time
+import random
+import threading
+from contextlib import asynccontextmanager
 import warnings
 import joblib
 
@@ -38,6 +41,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from google import genai
+from google.genai import types
 from langdetect import detect
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,6 +50,36 @@ from dataset_utils import find_similar_examples
 from benchmark import calculate_benchmark
 from compliance import get_compliance_mapping
 from lockin import calculate_lockin
+
+
+# ============================================================
+# AFC TOOL: DATASET SEARCH
+# ============================================================
+
+def search_dataset(query: str) -> str:
+    """
+    Searches the internal Compile AI dataset for relevant past enterprise blueprints,
+    tech stacks, BRD objectives, functional requirements, and effort estimates.
+    """
+    try:
+        examples = find_similar_examples(raw_input_text=query, limit=3)
+        if not examples:
+            return "No matching blueprint dataset records found."
+
+        formatted_items = []
+        for ex in examples:
+            formatted_items.append(
+                f"- Problem: {ex.get('problem_title')}\n"
+                f"  Industry: {ex.get('industry')}, Size: {ex.get('company_size_tag')}\n"
+                f"  Objectives: {ex.get('brd_objectives')}\n"
+                f"  Functional Requirements: {ex.get('functional_requirements')}\n"
+                f"  Architecture: {ex.get('hld_summary')}\n"
+                f"  Tech Stack: {ex.get('tech_stack')}\n"
+                f"  Cost Band: {ex.get('cost_band')}"
+            )
+        return "\n\n".join(formatted_items)
+    except Exception as e:
+        return f"Dataset search error: {str(e)}"
 
 
 # ============================================================
@@ -69,12 +103,42 @@ if not os.environ.get("GEMINI_API_KEY"):
 
 
 # ============================================================
+# STARTUP: WARM DATASET CACHE IN BACKGROUND
+# ============================================================
+
+def _warmup_cache():
+    """
+    Build TF-IDF index in a background thread so the first user
+    request is not blocked by the 50-second cold-start.
+    The server accepts requests immediately; the index is ready
+    within ~60s of startup.
+    """
+    try:
+        from dataset_utils import _ensure_cache
+        print("[startup] Warming TF-IDF dataset cache in background...")
+        _ensure_cache()
+        print("[startup] TF-IDF cache warm-up complete.")
+    except Exception as e:
+        print(f"[startup] Cache warm-up failed (non-fatal): {e}")
+
+
+@asynccontextmanager
+async def lifespan(application):
+    # Fire the warm-up in a daemon thread — does not block startup
+    t = threading.Thread(target=_warmup_cache, daemon=True, name="dataset-warmup")
+    t.start()
+    yield  # app runs here
+    # (cleanup on shutdown if needed)
+
+
+# ============================================================
 # APP
 # ============================================================
 
 app = FastAPI(
     title="Compile AI API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -154,32 +218,46 @@ def get_gemini_client():
 # GEMINI RETRY & RESILIENCE RUNNER
 # ============================================================
 
-def generate_with_retry(client, prompt: str, preferred_model: str = "gemini-2.0-flash", max_retries: int = 3):
+def generate_with_retry(
+    client,
+    prompt: str,
+    preferred_model: str = None,
+    tools: list = None,
+    max_retries: int = 3,
+    system_instruction: str = None
+):
     """
-    Executes Gemini generation with exponential backoff for transient 503 / 429 / quota spikes.
-    Pattern:
-      Gemini request -> 503? -> wait 2s -> retry -> 503? -> wait 5s -> retry -> fallback
-    """
-    models_to_try = [
-        preferred_model,
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-2.5-flash",
-        "gemini-3.6-flash"
-    ]
-    seen = set()
-    candidate_models = [m for m in models_to_try if not (m in seen or seen.add(m))]
+    Executes Gemini generation using the recommended client.chats.create pattern
+    with exponential backoff + jitter for transient 503 / 429 quota spikes.
 
-    backoff_delays = [2, 5, 8]
+    If tools are provided (such as search_dataset), Gemini dynamically decides whether
+    to invoke automatic function calling (AFC) to query the dataset or answer directly.
+    """
+    active_preferred = (preferred_model or os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")).strip()
+    # Small, explicitly configured list of verified models: primary first, then verified fallback
+    candidate_models = [active_preferred]
+    if "gemini-3.5-flash" not in candidate_models:
+        candidate_models.append("gemini-3.5-flash")
+
     last_error = None
 
     for model_name in candidate_models:
         for attempt in range(max_retries):
             try:
-                response = client.models.generate_content(
+                # Use client.chats.create recommended pattern for AFC & robust execution
+                config_kwargs = {}
+                if tools:
+                    config_kwargs["tools"] = tools
+                if system_instruction:
+                    config_kwargs["system_instruction"] = system_instruction
+
+                config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+
+                chat = client.chats.create(
                     model=model_name,
-                    contents=prompt
+                    config=config
                 )
+                response = chat.send_message(prompt)
                 if response and response.text:
                     return response.text.strip()
             except Exception as e:
@@ -191,13 +269,17 @@ def generate_with_retry(client, prompt: str, preferred_model: str = "gemini-2.0-
                     for code in ["503", "UNAVAILABLE", "ResourceExhausted", "high demand", "429", "RESOURCE_EXHAUSTED", "temporarily unavailable"]
                 )
                 if is_transient and attempt < max_retries - 1:
-                    delay = backoff_delays[attempt] if attempt < len(backoff_delays) else 5
-                    print(f"Gemini {model_name} transient 503/load spike: {err_str[:60]}... Retrying in {delay}s (attempt {attempt + 1}/{max_retries})...")
+                    # Exponential backoff with random jitter to prevent thundering-herd collisions
+                    # attempt 0: ~2.2s - 2.8s, attempt 1: ~4.2s - 5.0s, attempt 2: ~8.2s - 9.2s
+                    base_delay = 2.0
+                    jitter = random.uniform(0.2, 0.9)
+                    delay = (base_delay * (2 ** attempt)) + jitter
+                    print(f"Gemini {model_name} transient 503/load spike: {err_str[:60]}... Retrying in {delay:.2f}s with jitter (attempt {attempt + 1}/{max_retries})...")
                     time.sleep(delay)
                     continue
                 else:
-                    # Model not available or retries exhausted for this candidate, try next model
-                    print(f"Gemini model {model_name} attempt failed: {err_str[:80]}. Checking candidate fallbacks...")
+                    # Model not available or retries exhausted for this candidate, try fallback
+                    print(f"Gemini model {model_name} attempt failed: {err_str[:80]}. Checking configured fallback...")
                     break
 
     raise last_error or Exception("Gemini generation failed across all retry attempts and fallback models.")
@@ -339,7 +421,7 @@ Text:
         translated_text = generate_with_retry(
             client=client,
             prompt=prompt,
-            preferred_model="gemini-2.0-flash",
+            preferred_model=os.environ.get("GEMINI_MODEL", "gemini-3.8-flash"),
             max_retries=3
         )
         return TranslateResponse(translated_text=translated_text)
@@ -409,7 +491,7 @@ Client requirement:
         raw_text = generate_with_retry(
             client=client,
             prompt=prompt,
-            preferred_model="gemini-2.0-flash",
+            preferred_model=os.environ.get("GEMINI_MODEL", "gemini-3.8-flash"),
             max_retries=3
         )
     except Exception as e:
@@ -524,18 +606,43 @@ Give a short reason for each technology choice.
 
     "estimate":
         """
-Produce a first-pass project effort estimate.
+Produce a detailed, requirement-driven project effort and cost estimate.
 
-Include estimated person-weeks for:
-- Discovery
-- Design
-- Development
-- Testing
-- Deployment
+IMPORTANT: Do NOT use generic or placeholder numbers.
+Derive all estimates from the actual business requirement provided.
+Consider: number of modules, integration complexity, compliance burden,
+team size implied, and any timeline constraints mentioned.
 
-Also provide a rough low/mid/high cost band.
+Structure your response EXACTLY as follows (keep the section headers):
 
-Clearly state the assumptions.
+## Phase Breakdown
+
+| Phase | Weeks | % of Project |
+|---|---|---|
+| Discovery & Requirements | [N] | [%] |
+| Architecture & UX Design | [N] | [%] |
+| Core Build & Integration | [N] | [%] |
+| Testing, QA & Compliance | [N] | [%] |
+| Deployment & Pilot Launch | [N] | [%] |
+
+**Total Timeline**: [N] Weeks
+
+## Cost Band
+
+- **Minimum MVP (Low)**: $[amount] — lean scope, single-region, minimal third-party integrations
+- **Recommended Baseline (Mid)**: $[amount] — full feature set, standard compliance, one integration layer
+- **Enterprise High-Resilience (High)**: $[amount] — multi-region, 24×7 SLA, enterprise SSO, full audit trail
+
+## Assumptions & Drivers
+
+- Team composition assumed: [list specific roles]
+- Key cost drivers: [list 3–5 specific factors from this requirement]
+- Delivery model: [Agile / Fixed-scope / etc.]
+- [Any critical assumptions about scope, budget, or timeline stated in the requirement]
+
+## Risk Factors
+
+- [2–3 specific risks that could increase cost or timeline for this type of project]
 """
 }
 
@@ -572,30 +679,6 @@ def generate(req: GenerateRequest):
 
     context = req.raw_input_text
 
-    examples = find_similar_examples(
-        raw_input_text=req.raw_input_text,
-        limit=3
-    )
-
-    if examples:
-
-        context += (
-            "\n\nRelevant examples from Compile AI dataset:\n"
-        )
-
-        for example in examples:
-
-            context += (
-                f"\nProblem: {example['problem_title']}"
-                f"\nIndustry: {example['industry']}"
-                f"\nBusiness Size: {example['company_size_tag']}"
-                f"\nBRD Objectives: {example['brd_objectives']}"
-                f"\nFunctional Requirements: {example['functional_requirements']}"
-                f"\nArchitecture: {example['hld_summary']}"
-                f"\nTech Stack: {example['tech_stack']}"
-                f"\nCost Band: {example['cost_band']}\n"
-            )
-
     if req.discovery_answers:
 
         context += (
@@ -624,6 +707,7 @@ Important:
 - Clearly state assumptions where necessary.
 - The result is advisory and editable.
 - Write the response in {req.user_language}.
+- You can use the search_dataset tool to lookup relevant architecture blueprints, tech stacks, and benchmarks from the dataset whenever needed.
 
 Business context:
 {context}
@@ -634,7 +718,8 @@ Business context:
             section_text = generate_with_retry(
                 client=client,
                 prompt=prompt,
-                preferred_model="gemini-2.0-flash",
+                preferred_model=os.environ.get("GEMINI_MODEL", "gemini-3.8-flash"),
+                tools=[search_dataset],
                 max_retries=3
             )
         except Exception as e:
@@ -688,16 +773,37 @@ Business context:
                     f"Role-based access control (RBAC), audit trail logging, and HTTPS encrypted transit."
                 )
             elif section == "estimate":
+                # Use classifier cost_band to derive rough ranges for the fallback
+                cost_lower = cost.lower() if cost else "mid"
+                if "low" in cost_lower:
+                    low_r, mid_r, high_r = "$15K", "$35K", "$65K"
+                    weeks_build = 4
+                elif "high" in cost_lower or "enterprise" in cost_lower:
+                    low_r, mid_r, high_r = "$120K", "$250K", "$500K"
+                    weeks_build = 14
+                else:  # Mid
+                    low_r, mid_r, high_r = "$35K", "$85K", "$180K"
+                    weeks_build = 8
+
                 section_text = (
                     f"# Project Effort & Cost Estimate — {session_title}\n\n"
-                    f"> ⚠️ AI generation was unavailable. This is a structured fallback. Click **Regenerate Section** for a full AI-generated estimate.\n\n"
-                    f"- **Discovery & Requirements**: 2 Weeks\n"
-                    f"- **Architecture & UI/UX Design**: 2 Weeks\n"
-                    f"- **Core Engineering & Build**: 8 Weeks\n"
-                    f"- **Security QA & Compliance**: 2 Weeks\n"
-                    f"- **Deployment & Production Launch**: 2 Weeks\n\n"
-                    f"**Total Timeline**: 16 Weeks\n"
-                    f"**Estimated Cost Band**: {cost} ($75K - $250K)"
+                    f"> ⚠️ AI generation was unavailable. This is a classifier-derived fallback. Click **Regenerate Section** for a full AI-generated estimate tailored to your exact requirements.\n\n"
+                    f"## Phase Breakdown\n\n"
+                    f"| Phase | Weeks | % of Project |\n"
+                    f"|---|---|---|\n"
+                    f"| Discovery & Requirements | 2 | {round(2/(weeks_build+8)*100)}% |\n"
+                    f"| Architecture & UX Design | 2 | {round(2/(weeks_build+8)*100)}% |\n"
+                    f"| Core Build & Integration | {weeks_build} | {round(weeks_build/(weeks_build+8)*100)}% |\n"
+                    f"| Testing, QA & Compliance | 2 | {round(2/(weeks_build+8)*100)}% |\n"
+                    f"| Deployment & Pilot Launch | 2 | {round(2/(weeks_build+8)*100)}% |\n\n"
+                    f"**Total Timeline**: {weeks_build + 8} Weeks\n\n"
+                    f"## Cost Band (Classifier-derived — {ind})\n\n"
+                    f"- **Minimum MVP (Low)**: {low_r}\n"
+                    f"- **Recommended Baseline (Mid)**: {mid_r}\n"
+                    f"- **Enterprise High-Resilience (High)**: {high_r}\n\n"
+                    f"## Assumptions\n\n"
+                    f"- Cost band based on AI classifier output: **{cost}** for {ind} industry\n"
+                    f"- Click **Regenerate Section** for requirement-specific person-week and cost breakdown"
                 )
             else:
                 section_text = f"Compiled Analysis for {session_title} — {section} ({ind})."
@@ -1071,12 +1177,14 @@ Write the response in {req.language}.
 Be specific to the requirement.
 Do not invent information that is not provided.
 Clearly label assumptions.
+You can use the search_dataset tool to lookup relevant architecture blueprints, tech stacks, and benchmarks from the dataset whenever needed.
 """
 
         consultant_content = generate_with_retry(
             client=client,
             prompt=prompt,
-            preferred_model="gemini-2.0-flash",
+            preferred_model=os.environ.get("GEMINI_MODEL", "gemini-3.8-flash"),
+            tools=[search_dataset],
             max_retries=3
         )
 

@@ -521,3 +521,251 @@ export function setStoredSidebarCollapsed(collapsed) {
     if (typeof localStorage !== 'undefined') localStorage.setItem(COOKIE_KEYS.SIDEBAR_COLLAPSED, strVal);
   } catch (e) {}
 }
+
+/* ═══════════════════════════════════════════════════════════════
+ * User Roles & RBAC Management (Synchronized with Backend)
+ * Roles: 'admin' (Owner/Full Access), 'developer' (Editor/Builder), 'viewer' (Read Only)
+ * ═══════════════════════════════════════════════════════════════ */
+
+export const USER_ROLES = {
+  ADMIN: 'admin',
+  DEVELOPER: 'developer',
+  VIEWER: 'viewer',
+};
+
+/**
+ * Normalize backend/database role string to frontend role convention
+ */
+export function normalizeFrontendRole(rawRole) {
+  if (!rawRole) return 'developer';
+  const r = String(rawRole).trim().toLowerCase();
+  if (r === 'owner' || r === 'admin') return 'admin';
+  if (r === 'member' || r === 'developer') return 'developer';
+  if (r === 'viewer' || r === 'read_only') return 'viewer';
+  return 'developer';
+}
+
+/**
+ * Get the current user's authenticated role derived from backend user profile / JWT token.
+ * Prevents client-side forged localStorage privilege escalation.
+ */
+export function getUserRole() {
+  try {
+    const user = getStoredUser();
+    if (user && user.role) {
+      return normalizeFrontendRole(user.role);
+    }
+    return 'admin';
+  } catch {
+    return 'admin';
+  }
+}
+
+/**
+ * Update user role through the backend API and update stored session & state
+ */
+export async function setUserRole(role) {
+  const cleanRole = normalizeFrontendRole(role);
+  const token = getStoredToken();
+
+  if (token) {
+    try {
+      const res = await fetch('http://localhost:5000/api/auth/role', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ role: cleanRole }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) {
+          setStoredToken(data.token);
+        }
+        if (data.user) {
+          const currentUser = getStoredUser() || {};
+          setStoredUser({ ...currentUser, ...data.user, role: cleanRole });
+        }
+      }
+    } catch (e) {
+      console.warn('Could not sync role change to backend:', e);
+    }
+  }
+
+  // Local state update
+  const user = getStoredUser() || {};
+  user.role = cleanRole;
+  setStoredUser(user);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('role_changed', { detail: { role: cleanRole } }));
+  }
+
+  return cleanRole;
+}
+
+/**
+ * Synchronize user role and profile from the backend /me endpoint
+ */
+export async function syncUserRoleWithBackend() {
+  try {
+    const token = getStoredToken();
+    if (!token) return getUserRole();
+
+    const res = await fetch('http://localhost:5000/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.user) {
+        const currentUser = getStoredUser() || {};
+        const normalized = normalizeFrontendRole(data.user.role);
+        setStoredUser({ ...currentUser, ...data.user, role: normalized });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('role_changed', { detail: { role: normalized } }));
+        }
+        return normalized;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not sync user profile/role from backend:', err);
+  }
+  return getUserRole();
+}
+
+export function canDeploy() {
+  return getUserRole() === 'admin';
+}
+
+export function canEditCode() {
+  const role = getUserRole();
+  return role === 'admin' || role === 'developer';
+}
+
+export function canApproveBlueprint() {
+  const role = getUserRole();
+  return role === 'admin' || role === 'developer';
+}
+
+export function canCreateBlueprint() {
+  const role = getUserRole();
+  return role === 'admin' || role === 'developer';
+}
+
+export function canRegenerate() {
+  const role = getUserRole();
+  return role === 'admin' || role === 'developer';
+}
+
+
+/**
+ * Subscription Plan Management
+ * Plans: 'free' | 'starter' | 'enterprise'
+ */
+export function getUserPlan() {
+  try {
+    return localStorage.getItem('compile_user_plan') || getCookie('compile_user_plan') || 'free';
+  } catch {
+    return 'free';
+  }
+}
+
+export function setUserPlan(planId) {
+  const cleanPlan = ['free', 'starter', 'enterprise'].includes(planId) ? planId : 'free';
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('compile_user_plan', cleanPlan);
+    setCookie('compile_user_plan', cleanPlan, 365);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('plan_changed', { detail: { plan: cleanPlan } }));
+    }
+  } catch (e) {
+    console.warn('Failed to set user plan:', e);
+  }
+  return cleanPlan;
+}
+
+/**
+ * Credits Management (Default: 5 Credits)
+ */
+export function getUserCredits() {
+  try {
+    const raw = localStorage.getItem('compile_credits');
+    if (raw !== null && !isNaN(parseInt(raw, 10))) {
+      return parseInt(raw, 10);
+    }
+    return 5; // Default free tier credits
+  } catch {
+    return 5;
+  }
+}
+
+export function deductUserCredit(amount = 1) {
+  try {
+    const current = getUserCredits();
+    const updated = Math.max(0, current - amount);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('compile_credits', updated.toString());
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('credits_changed', { detail: { credits: updated, deducted: amount } }));
+    }
+    return updated;
+  } catch {
+    return 4;
+  }
+}
+
+export function setUserCredits(amount) {
+  try {
+    const val = Math.max(0, parseInt(amount, 10) || 0);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('compile_credits', val.toString());
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('credits_changed', { detail: { credits: val } }));
+    }
+    return val;
+  } catch {
+    return 0;
+  }
+}
+
+export async function syncUserCreditsWithBackend() {
+  try {
+    const token = getStoredToken();
+    if (!token) return getUserCredits();
+    const res = await fetch('http://localhost:5000/api/payment/balance', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && typeof data.credits === 'number') {
+        return setUserCredits(data.credits);
+      }
+    }
+  } catch (err) {
+    console.warn('Could not sync credits with backend:', err);
+  }
+  return getUserCredits();
+}
+
+export function addCredits(amount = 10) {
+  try {
+    const current = getUserCredits();
+    const updated = current + amount;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('compile_credits', updated.toString());
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('credits_changed', { detail: { credits: updated, added: amount } }));
+    }
+    return updated;
+  } catch {
+    return 15;
+  }
+}

@@ -112,6 +112,7 @@ export const authController = {
           role: user.role,
           company: companyName,
           workspaceId: workspace.id,
+          credits: user.credits !== undefined ? user.credits : 5,
           onboardingCompleted: false,
         },
       });
@@ -166,6 +167,7 @@ export const authController = {
           email: user.email,
           role: user.role,
           workspaceId: user.workspace_id,
+          credits: user.credits !== undefined ? user.credits : 5,
           onboardingCompleted: true,
         },
       });
@@ -258,6 +260,105 @@ export const authController = {
         await UserModel.setOnboardingCompleted(userId, true);
       }
       res.json({ success: true, message: 'Onboarding completed successfully.' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async updateRole(req, res, next) {
+    try {
+      const { role } = req.body;
+      const validRoles = ['owner', 'admin', 'member', 'developer', 'viewer'];
+      if (!role || !validRoles.includes(String(role).toLowerCase())) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid role. Allowed roles: ${validRoles.join(', ')}`,
+        });
+      }
+
+      const targetRole = String(role).toLowerCase();
+      const userId = req.user.userId;
+      const updatedUser = await UserModel.updateRole(userId, targetRole);
+
+      // Issue refreshed JWT token containing updated role
+      const token = jwt.sign(
+        {
+          userId: updatedUser.id,
+          email: updatedUser.email,
+          workspaceId: updatedUser.workspace_id,
+          role: updatedUser.role,
+          companyName: updatedUser.company,
+        },
+        env.JWT_SECRET,
+        { expiresIn: env.JWT_EXPIRES_IN }
+      );
+
+      res.json({
+        success: true,
+        message: `Role successfully updated to ${targetRole}.`,
+        token,
+        user: {
+          id: updatedUser.id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          role: updatedUser.role,
+          company: updatedUser.company,
+          workspaceId: updatedUser.workspace_id,
+          credits: updatedUser.credits,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async updateMemberRole(req, res, next) {
+    try {
+      const { memberId } = req.params;
+      const { role } = req.body;
+      const validRoles = ['owner', 'admin', 'member', 'developer', 'viewer'];
+      if (!role || !validRoles.includes(String(role).toLowerCase())) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid role. Allowed roles: ${validRoles.join(', ')}`,
+        });
+      }
+
+      const targetRole = String(role).toLowerCase();
+      const targetUser = await UserModel.findById(memberId);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, message: 'Member not found.' });
+      }
+
+      if (targetUser.workspace_id !== req.user.workspaceId) {
+        return res.status(403).json({ success: false, message: 'Cannot modify users from another workspace.' });
+      }
+
+      const updatedUser = await UserModel.updateRole(memberId, targetRole);
+
+      res.json({
+        success: true,
+        message: `Member ${updatedUser.name}'s role updated to ${targetRole}.`,
+        user: {
+          id: updatedUser.id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          role: updatedUser.role,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getWorkspaceMembers(req, res, next) {
+    try {
+      const workspaceId = req.user.workspaceId;
+      const members = await UserModel.findByWorkspace(workspaceId);
+      res.json({
+        success: true,
+        members: members || [],
+      });
     } catch (err) {
       next(err);
     }

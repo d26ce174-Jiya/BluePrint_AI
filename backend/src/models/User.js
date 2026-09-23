@@ -10,7 +10,7 @@ export const UserModel = {
 
   async findById(id) {
     const rows = await query(
-      `SELECT u.id, u.workspace_id, u.name, u.email, u.role, u.onboarding_completed, u.created_at,
+      `SELECT u.id, u.workspace_id, u.name, u.email, u.role, u.credits, u.onboarding_completed, u.created_at,
               w.name as workspace_name, o.name as company
        FROM users u
        LEFT JOIN workspaces w ON u.workspace_id = w.id
@@ -79,6 +79,22 @@ export const UserModel = {
     await query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, userId]);
   },
 
+  async updateRole(userId, role) {
+    await query('UPDATE users SET role = ? WHERE id = ?', [role, userId]);
+    return this.findById(userId);
+  },
+
+  async findByWorkspace(workspaceId) {
+    if (!workspaceId) return [];
+    return query(
+      `SELECT id, name, email, role, credits, created_at
+       FROM users
+       WHERE workspace_id = ?
+       ORDER BY created_at ASC`,
+      [workspaceId]
+    );
+  },
+
   async updateWorkspace(userId, workspaceId) {
     await query('UPDATE users SET workspace_id = ? WHERE id = ?', [workspaceId, userId]);
   },
@@ -86,5 +102,31 @@ export const UserModel = {
   async setOnboardingCompleted(userId, completed = true) {
     await query('UPDATE users SET onboarding_completed = ? WHERE id = ?', [completed ? 1 : 0, userId]);
     return this.findById(userId);
+  },
+
+  async getCredits(userId) {
+    const rows = await query('SELECT credits FROM users WHERE id = ? LIMIT 1', [userId]);
+    return rows[0] && rows[0].credits !== undefined ? rows[0].credits : 0;
+  },
+
+  async deductCredit(userId, amount = 1) {
+    const res = await query(
+      'UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ?',
+      [amount, userId, amount]
+    );
+    const current = await this.getCredits(userId);
+    return {
+      success: res.affectedRows > 0,
+      remainingCredits: current,
+    };
+  },
+
+  async addCredits(userId, amount) {
+    await query('UPDATE users SET credits = credits + ? WHERE id = ?', [amount, userId]);
+    const current = await this.getCredits(userId);
+    return {
+      success: true,
+      newCredits: current,
+    };
   }
 };

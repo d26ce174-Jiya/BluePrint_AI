@@ -46,19 +46,22 @@ function parseJsonResponse(text) {
 
 // 1. Google Gemini REST API (v1beta)
 async function callGemini({ apiKey, model, systemPrompt, userPrompt, jsonMode }) {
-  let targetModel = (model || env.GEMINI_MODEL || 'gemini-3.6-flash').trim();
+  let targetModel = (model || env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
   const lower = targetModel.toLowerCase();
   if (
     lower.includes('1.5') ||
+    lower.includes('2.0') ||
     lower.includes('2.5') ||
     lower === 'gemini-pro' ||
     lower === 'models/gemini-pro' ||
     !targetModel
   ) {
-    targetModel = 'gemini-3.6-flash';
+    targetModel = 'gemini-3.8-flash';
   }
   const cleanModel = targetModel.replace(/^models\//, '');
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${apiKey}`;
+
+  // Small, explicitly configured list of verified models: primary first, then verified fallback
+  const candidateModels = Array.from(new Set([cleanModel, 'gemini-3.5-flash']));
 
   const body = {
     contents: [
@@ -80,39 +83,47 @@ async function callGemini({ apiKey, model, systemPrompt, userPrompt, jsonMode })
   }
 
   let lastErr = null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        if ((response.status === 503 || response.status === 429) && attempt < 2) {
-          console.warn(`[Gemini] Transient ${response.status}. Retrying in 1200ms...`);
+  for (const currentModel of candidateModels) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          if ((response.status === 503 || response.status === 429) && attempt < 2) {
+            const jitter = Math.floor(Math.random() * 500) + 200; // 200ms - 700ms jitter
+            const backoff = 1500 * Math.pow(2, attempt - 1) + jitter;
+            console.warn(`[Gemini] Transient ${response.status} on ${currentModel}. Retrying in ${backoff}ms with jitter...`);
+            await new Promise((r) => setTimeout(r, backoff));
+            continue;
+          }
+          throw new Error(`Gemini API Error [${response.status}] model ${currentModel}: ${errText.substring(0, 300)}`);
+        }
+
+        const data = await response.json();
+        const candidate = data.candidates?.[0];
+        if (!candidate) {
+          throw new Error(`Gemini returned no candidates. Prompt feedback: ${JSON.stringify(data.promptFeedback || {})}`);
+        }
+
+        const parts = candidate.content?.parts || [];
+        return parts.map((p) => p.text || '').filter(Boolean).join('');
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2 && (err.message.includes('503') || err.message.includes('429'))) {
           await new Promise((r) => setTimeout(r, 1200));
           continue;
         }
-        throw new Error(`Gemini API Error [${response.status}] model ${cleanModel}: ${errText.substring(0, 300)}`);
+        // Try next candidate model if 503 or 404
+        console.warn(`[Gemini] Model ${currentModel} failed (${err.message.substring(0, 100)}). Trying candidate fallback...`);
+        break;
       }
-
-      const data = await response.json();
-      const candidate = data.candidates?.[0];
-      if (!candidate) {
-        throw new Error(`Gemini returned no candidates. Prompt feedback: ${JSON.stringify(data.promptFeedback || {})}`);
-      }
-
-      const parts = candidate.content?.parts || [];
-      return parts.map((p) => p.text || '').filter(Boolean).join('');
-    } catch (err) {
-      lastErr = err;
-      if (attempt < 2 && (err.message.includes('503') || err.message.includes('429'))) {
-        await new Promise((r) => setTimeout(r, 1200));
-        continue;
-      }
-      throw err;
     }
   }
   throw lastErr;

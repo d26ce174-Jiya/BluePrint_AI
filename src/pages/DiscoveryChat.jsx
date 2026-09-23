@@ -2,54 +2,41 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../components/layout/Navbar';
 import DashboardSidebar from '../components/layout/DashboardSidebar';
-import { getStoredToken, getStoredUser, getStoredSidebarCollapsed } from '../utils/cookieUtils';
-
-/* ─── Unified Theme Palette ─── */
-const C = {
-  bg:         '#f6f7fb',
-  surface:    '#ffffff',
-  surfaceAlt: '#f8fafc',
-  border:     '#e2e8f0',
-  borderMed:  '#cbd5e1',
-  primary:    '#6366f1',
-  primaryDk:  '#4f46e5',
-  primaryLt:  '#eef2ff',
-  accent:     '#06b6d4',
-  accentLt:   '#ecfeff',
-  success:    '#10b981',
-  successLt:  '#d1fae5',
-  warn:       '#f59e0b',
-  warnLt:     '#fef3c7',
-  textH:      '#0f172a',
-  textB:      '#334155',
-  textM:      '#64748b',
-  textSub:    '#94a3b8',
-  grad:       'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)',
-};
+import { getStoredToken, getStoredUser, getStoredSidebarCollapsed, deductUserCredit, getUserCredits, getUserRole } from '../utils/cookieUtils';
+import { getCurrentLanguage, t, useTranslation } from '../utils/i18n';
 
 /* ─── Inline SVG Icons ─── */
-function Icon({ d, size = 18, color = 'currentColor', style = {} }) {
+function Icon({ d, size = 18, color = 'currentColor', className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      stroke={color} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${className}`}>
       <path d={d} />
     </svg>
   );
 }
 
-const SEND_ICON   = 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z';
-const SPARK_ICON  = 'M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83';
-const CHECK_ICON  = 'M20 6L9 17l-5-5';
-const BOT_ICON    = 'M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM4 11a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7zm4 4h.01M16 15h.01';
-const USER_ICON   = 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z';
-const FILE_ICON   = 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6';
-const EDIT_ICON   = 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z';
-const PLUS_ICON   = 'M12 5v14M5 12h14';
-const MENU_ICON   = 'M4 6h16M4 12h16M4 18h16';
+const SEND_ICON = 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z';
+const SPARK_ICON = 'M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83';
+const CHECK_ICON = 'M20 6L9 17l-5-5';
+const BOT_ICON = 'M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM4 11a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7zm4 4h.01M16 15h.01';
+const USER_ICON = 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z';
+const FILE_ICON = 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6';
+const EDIT_ICON = 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z';
+const MENU_ICON = 'M4 6h16M4 12h16M4 18h16';
 
 export default function DiscoveryChat() {
   const { id: paramSessionId } = useParams();
   const navigate = useNavigate();
+
+  // Multilingual & RBAC State
+  const { t, currentLanguage } = useTranslation();
+  const [currentRole, setCurrentRole] = useState(() => getUserRole());
+  useEffect(() => {
+    const handleRole = (e) => setCurrentRole(e.detail?.role || getUserRole());
+    window.addEventListener('role_changed', handleRole);
+    return () => window.removeEventListener('role_changed', handleRole);
+  }, []);
+  const isViewer = currentRole === 'viewer';
 
   // User & Auth State
   const [user, setUser] = useState(null);
@@ -112,7 +99,6 @@ export default function DiscoveryChat() {
     setErrorNotice('');
 
     try {
-      // 1. Fetch user's session list from backend
       const res = await fetch('http://localhost:5000/api/sessions', {
         headers: { Authorization: `Bearer ${token || getStoredToken()}` },
       });
@@ -124,27 +110,22 @@ export default function DiscoveryChat() {
         setAllSessions(sessionsList);
       }
 
-      // 2. Determine which session to open
       let resolvedId = targetId;
 
       if (!resolvedId) {
-        // Check localStorage for previously remembered session
         const lastRemembered = typeof localStorage !== 'undefined' ? localStorage.getItem('compile_last_session_id') : null;
         if (lastRemembered && sessionsList.some(s => s.id === lastRemembered)) {
           resolvedId = lastRemembered;
         } else if (sessionsList.length > 0) {
-          // Default to the first active/discovery session, or newest session
           const discoverySess = sessionsList.find(s => s.status === 'discovery');
           resolvedId = discoverySess ? discoverySess.id : sessionsList[0].id;
         }
       }
 
-      // 3. If a session is resolved, load its complete details
       if (resolvedId) {
         setActiveSessionId(resolvedId);
         await loadSessionDetails(token, resolvedId);
       } else {
-        // No sessions exist yet in MySQL
         setSession(null);
         setLoading(false);
       }
@@ -174,21 +155,18 @@ export default function DiscoveryChat() {
       const qas = data.discoveryQas || [];
       setQuestions(qas);
 
-      // Remember this session ID
       try {
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem('compile_last_session_id', sessId);
         }
-      } catch (e) {}
+      } catch (e) { }
 
-      // Initialize drafts
       const drafts = {};
       qas.forEach(q => {
         if (q.answer) drafts[q.id] = q.answer;
       });
       setDraftAnswers(drafts);
 
-      // Construct initial chat thread using persistent MySQL messages
       buildInitialMessages(data.session, data.documents || [], qas, data.messages || []);
 
     } catch (err) {
@@ -227,7 +205,6 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
     setMessages(thread);
   };
 
-  // Instant Quick-Start Session Creation for Empty State
   const handleCreateStarterSession = async (e) => {
     if (e) e.preventDefault();
     const token = getStoredToken();
@@ -262,8 +239,11 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
     }
   };
 
-  // Submit Answer to a Specific Discovery Question
   const handleAnswerSubmit = async (qaId) => {
+    if (isViewer) {
+      alert('🔒 Access Restricted: Answering discovery questions is disabled in Viewer (Read-Only) mode. Switch your role to Developer or Admin in the navigation bar.');
+      return;
+    }
     const answerText = (draftAnswers[qaId] || '').trim();
     if (!answerText) return;
 
@@ -310,7 +290,6 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
     }
   };
 
-  // Send Message to AI Consultant with MySQL Database Memory Persistence
   const handleSendMessage = async (e) => {
     e.preventDefault();
     const text = chatInput.trim();
@@ -319,7 +298,6 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
     const token = getStoredToken();
     if (!token) return;
 
-    // Optimistically show user message
     const tempUserMsg = {
       id: 'usr_' + Date.now(),
       sender: 'user',
@@ -360,10 +338,22 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
     }
   };
 
-  // Trigger Parallel Multi-Agent Blueprint Compilation
   const handleGenerateBlueprint = async () => {
+    if (isViewer) {
+      alert('🔒 Access Restricted: Compiling and generating blueprints is disabled in Viewer (Read-Only) mode. Switch your role to Developer or Admin in the navigation bar.');
+      return;
+    }
     const token = getStoredToken();
     if (!token || !activeSessionId) return;
+
+    const availableCredits = getUserCredits();
+    if (availableCredits <= 0) {
+      alert('🪙 Insufficient Coins: Compiling an architecture blueprint costs 1 coin. You have 0 coins left. Redirecting to Pricing to recharge...');
+      navigate('/pricing');
+      return;
+    }
+
+    deductUserCredit(1);
 
     setCompiling(true);
     setCompilationProgress(15);
@@ -372,9 +362,9 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
     try {
       const progressTimer = setInterval(() => {
         setCompilationProgress(p => {
-          if (p < 35) {
-            setCompilationStage('Business Analysis Engine: Formulating BRD & Stakeholder Matrix...');
-            return p + 15;
+          if (p < 40) {
+            setCompilationStage('Business Analysis Engine: Formulating Executive BRD & FRs...');
+            return p + 12;
           }
           if (p < 70) {
             setCompilationStage('Solution Architecture Builder: Designing HLD & Cloud Topology...');
@@ -400,6 +390,11 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        if (res.status === 402 || errData.error === 'INSUFFICIENT_CREDITS') {
+          alert('🪙 Insufficient Coins: You have 0 coins left. Redirecting to Pricing...');
+          navigate('/pricing');
+          return;
+        }
         throw new Error(errData.message || 'Blueprint compilation failed.');
       }
 
@@ -408,8 +403,8 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
 
       setTimeout(() => {
         setCompiling(false);
-        loadSessionDetails(token, activeSessionId);
-      }, 900);
+        navigate(`/session/${activeSessionId}/result`);
+      }, 800);
 
     } catch (err) {
       console.error(err);
@@ -418,14 +413,21 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
     }
   };
 
-  // Progress metrics
   const answeredCount = questions.filter(q => q.answer && q.answer.trim().length > 0).length;
   const totalQuestions = questions.length || 1;
   const completionPercentage = Math.round((answeredCount / totalQuestions) * 100);
   const isCompleted = session?.status === 'completed';
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui, -apple-system, sans-serif', color: C.textH }}>
+    <div className="min-h-screen bg-slate-50 relative overflow-x-hidden">
+      <style>{`@keyframes spinFast { to { transform: rotate(360deg); } }`}</style>
+
+      {/* Ambient background glow — matches the sidebar's decorative blobs */}
+      <div aria-hidden className="fixed top-[-120px] right-[-140px] w-[420px] h-[420px] rounded-full pointer-events-none z-0"
+        style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 70%)' }} />
+      <div aria-hidden className="fixed bottom-[-160px] left-[-120px] w-[420px] h-[420px] rounded-full pointer-events-none z-0"
+        style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.06) 0%, transparent 70%)' }} />
+
       <Navbar />
 
       <DashboardSidebar
@@ -440,106 +442,50 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
         setMobileOpen={setMobileSidebarOpen}
       />
 
-      <main
-        style={{
-          marginLeft: sidebarCollapsed ? 68 : 244,
-          padding: '84px 28px 40px',
-          transition: 'margin-left 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
-          minHeight: 'calc(100vh - 64px)',
-          boxSizing: 'border-box',
-        }}
-        className="discovery-main"
-      >
-        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+      <main className={`relative z-10 transition-[margin-left] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] px-3 sm:px-5 lg:px-7 pt-24 lg:pt-28 pb-10 box-border ${sidebarCollapsed ? 'lg:ml-[74px]' : 'lg:ml-[260px]'}`}>
+        <div className="max-w-[1240px] mx-auto">
 
-          {/* Mobile Sidebar Toggle — shown only on small screens via CSS */}
+          {/* Mobile Sidebar Toggle */}
           <button
-            className="discovery-mobile-toggle"
             onClick={() => setMobileSidebarOpen(true)}
-            style={{
-              display: 'none',
-              alignItems: 'center',
-              gap: 7,
-              padding: '7px 13px',
-              borderRadius: 10,
-              background: 'rgba(255,255,255,0.85)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid #e2e8f0',
-              color: '#4f46e5',
-              fontSize: 12.5,
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(99,102,241,0.08)',
-              marginBottom: 16,
-            }}
+            className="lg:hidden inline-flex items-center gap-2 mb-4 px-3.5 py-2 rounded-xl bg-white/85 backdrop-blur-md border border-slate-200/80 text-indigo-600 text-[12.5px] font-bold cursor-pointer shadow-[0_2px_8px_rgba(99,102,241,0.08)]"
           >
             <Icon d={MENU_ICON} size={15} color="#6366f1" />
-            <span>Navigation & Pages</span>
+            Navigation & Pages
           </button>
 
           {/* ─── Loading State ─── */}
           {loading && (
-            <div style={{
-              background: C.surface,
-              border: `1px solid ${C.border}`,
-              borderRadius: 18,
-              padding: '64px 24px',
-              textAlign: 'center',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
-            }}>
-              <div style={{
-                width: 36,
-                height: 36,
-                border: `3px solid ${C.primaryLt}`,
-                borderTopColor: C.primary,
-                borderRadius: '50%',
-                margin: '0 auto 16px',
-                animation: 'spinFast 0.8s linear infinite',
-              }} />
-              <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 700, color: C.textH }}>
+            <div className="bg-white/90 backdrop-blur-xl border border-slate-200/70 rounded-2xl px-6 py-16 text-center shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+              <div
+                className="w-9 h-9 rounded-full mx-auto mb-4 border-[3px] border-indigo-100"
+                style={{ borderTopColor: '#6366f1', animation: 'spinFast 0.8s linear infinite' }}
+              />
+              <h3 className="m-0 mb-1.5 text-[17px] font-bold text-slate-900">
                 Loading Discovery Workspace...
               </h3>
-              <p style={{ margin: 0, fontSize: 13.5, color: C.textM }}>
+              <p className="m-0 text-[13.5px] text-slate-500">
                 Connecting to MySQL session & AI Business Consultant
               </p>
             </div>
           )}
 
-          {/* ─── Empty State: No Sessions in MySQL Yet ─── */}
+          {/* ─── Empty State ─── */}
           {!loading && !session && (
-            <div style={{
-              background: C.surface,
-              border: `1px solid ${C.border}`,
-              borderRadius: 20,
-              padding: '48px 32px',
-              maxWidth: 680,
-              margin: '20px auto',
-              textAlign: 'center',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
-            }}>
-              <div style={{
-                width: 56,
-                height: 56,
-                borderRadius: 16,
-                background: C.primaryLt,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 18px',
-              }}>
-                <Icon d={BOT_ICON} size={28} color={C.primary} />
+            <div className="bg-white/90 backdrop-blur-xl border border-slate-200/70 rounded-[22px] p-6 sm:p-9 max-w-[680px] mx-auto text-center shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-4.5">
+                <Icon d={BOT_ICON} size={28} color="#6366f1" />
               </div>
-              <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 10px', color: C.textH }}>
+              <h2 className="text-[21px] sm:text-[22px] font-extrabold m-0 mb-2.5 text-slate-900">
                 Start Your AI Discovery Session
               </h2>
-              <p style={{ fontSize: 14, color: C.textM, margin: '0 auto 28px', maxWidth: 480, lineHeight: 1.6 }}>
+              <p className="text-[14px] text-slate-500 mx-auto mb-7 max-w-[480px] leading-relaxed">
                 You don't have an active discovery session yet. Create your first transformation initiative to engage with the AI Business Consultant.
               </p>
 
-              <form onSubmit={handleCreateStarterSession} style={{ textAlign: 'left', background: C.surfaceAlt, padding: 22, borderRadius: 14, border: `1px solid ${C.border}` }}>
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.textB, marginBottom: 6 }}>
+              <form onSubmit={handleCreateStarterSession} className="text-left bg-slate-50/80 p-5 sm:p-5.5 rounded-2xl border border-slate-200/70">
+                <div className="mb-3.5">
+                  <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">
                     Blueprint Project Title
                   </label>
                   <input
@@ -547,20 +493,12 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                     value={starterTitle}
                     onChange={e => setStarterTitle(e.target.value)}
                     required
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 8,
-                      border: `1.5px solid ${C.border}`,
-                      fontSize: 14,
-                      boxSizing: 'border-box',
-                      outline: 'none',
-                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl border-[1.5px] border-slate-200 text-[14px] box-border outline-none transition-colors focus:border-indigo-400"
                   />
                 </div>
 
-                <div style={{ marginBottom: 18 }}>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.textB, marginBottom: 6 }}>
+                <div className="mb-4.5">
+                  <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">
                     Initial Problem Statement / Goals
                   </label>
                   <textarea
@@ -568,31 +506,15 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                     placeholder="Briefly describe what you want to automate or modernize..."
                     value={starterText}
                     onChange={e => setStarterText(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 8,
-                      border: `1.5px solid ${C.border}`,
-                      fontSize: 13.5,
-                      boxSizing: 'border-box',
-                      outline: 'none',
-                      resize: 'vertical',
-                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl border-[1.5px] border-slate-200 text-[13.5px] box-border outline-none resize-y transition-colors focus:border-indigo-400"
                   />
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                <div className="flex items-center justify-between flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={() => navigate('/session/new')}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: C.primary,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
+                    className="bg-transparent border-none text-indigo-600 text-[13px] font-semibold cursor-pointer p-0"
                   >
                     Or use full multi-format intake (SOP / PDF upload) →
                   </button>
@@ -600,20 +522,7 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                   <button
                     type="submit"
                     disabled={startingSession}
-                    style={{
-                      background: C.grad,
-                      color: '#fff',
-                      border: 'none',
-                      padding: '10px 22px',
-                      borderRadius: 9,
-                      fontWeight: 700,
-                      fontSize: 13.5,
-                      cursor: startingSession ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      boxShadow: '0 4px 14px rgba(99,102,241,0.35)',
-                    }}
+                    className={`flex items-center gap-2 text-white border-none px-5 py-2.5 rounded-xl font-bold text-[13.5px] shadow-[0_4px_14px_rgba(99,102,241,0.35)] transition-all duration-200 ${startingSession ? 'bg-slate-300 cursor-not-allowed' : 'bg-gradient-to-br from-indigo-500 to-cyan-500 cursor-pointer hover:-translate-y-0.5'}`}
                   >
                     <Icon d={SPARK_ICON} size={15} color="#fff" />
                     <span>{startingSession ? 'Initializing...' : 'Launch Discovery Chat →'}</span>
@@ -627,32 +536,19 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
           {!loading && session && (
             <>
               {/* Header Bar with Session Switcher */}
-              <div style={{
-                background: C.surface,
-                border: `1px solid ${C.border}`,
-                borderRadius: 18,
-                padding: '18px 24px',
-                marginBottom: 24,
-                boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 16,
-              }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: C.textSub, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ cursor: 'pointer', color: C.primary, fontWeight: 600 }} onClick={() => navigate('/dashboard')}>
+              <div className="flex items-center justify-between flex-wrap gap-4 bg-white/90 backdrop-blur-xl border border-slate-200/70 rounded-2xl px-5 sm:px-6 py-4.5 mb-6 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-[12px] text-slate-400 mb-1 flex-wrap">
+                    <span className="cursor-pointer text-indigo-600 font-semibold" onClick={() => navigate('/dashboard')}>
                       Dashboard
                     </span>
                     <span>/</span>
                     <span>Blueprints</span>
                     <span>/</span>
-                    <span style={{ color: C.textB, fontWeight: 600 }}>Stage 2: AI Discovery Q&A</span>
+                    <span className="text-slate-600 font-semibold">Stage 2: AI Discovery Q&A</span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                    {/* Session Selector Dropdown if multiple exist */}
+                  <div className="flex items-center gap-3 flex-wrap">
                     {allSessions.length > 1 ? (
                       <select
                         value={activeSessionId || ''}
@@ -662,18 +558,7 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                           navigate(`/session/${newId}`);
                           loadSessionDetails(getStoredToken(), newId);
                         }}
-                        style={{
-                          fontSize: 18,
-                          fontWeight: 800,
-                          color: C.textH,
-                          border: `1px solid ${C.border}`,
-                          borderRadius: 8,
-                          padding: '4px 10px',
-                          background: C.surface,
-                          cursor: 'pointer',
-                          maxWidth: '100%',
-                          width: '100%',
-                        }}
+                        className="text-[17px] sm:text-[18px] font-extrabold text-slate-900 border border-slate-200/80 rounded-lg px-2.5 py-1 bg-white cursor-pointer max-w-full w-full sm:w-auto"
                       >
                         {allSessions.map(s => (
                           <option key={s.id} value={s.id}>
@@ -682,38 +567,21 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                         ))}
                       </select>
                     ) : (
-                      <h1 style={{ fontSize: 22, fontWeight: 800, color: C.textH, margin: 0, wordBreak: 'break-word', maxWidth: '100%' }}>
+                      <h1 className="text-[20px] sm:text-[22px] font-extrabold text-slate-900 m-0 break-words max-w-full">
                         {session.title}
                       </h1>
                     )}
 
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      padding: '3px 9px',
-                      borderRadius: 20,
-                      background: isCompleted ? C.successLt : C.warnLt,
-                      color: isCompleted ? '#065f46' : '#92400e',
-                      border: `1px solid ${isCompleted ? '#a7f3d0' : '#fde68a'}`,
-                    }}>
+                    <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full border tracking-[0.2px] whitespace-nowrap ${isCompleted ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200'}`}>
                       {isCompleted ? '✓ Compiled & Ready' : '⏳ In Discovery Q&A'}
                     </span>
                   </div>
                 </div>
 
-                <div className="discovery-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div className="flex items-center gap-2.5 flex-wrap w-full sm:w-auto">
                   <button
                     onClick={() => navigate('/session/new')}
-                    style={{
-                      background: C.surfaceAlt,
-                      border: `1px solid ${C.border}`,
-                      borderRadius: 9,
-                      padding: '9px 15px',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: C.textB,
-                      cursor: 'pointer',
-                    }}
+                    className="bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2.5 text-[13px] font-semibold text-slate-700 cursor-pointer whitespace-nowrap transition-colors hover:bg-white hover:border-slate-300"
                   >
                     + New Blueprint
                   </button>
@@ -721,20 +589,7 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                   {isCompleted && (
                     <button
                       onClick={() => navigate(`/session/${activeSessionId}/result`)}
-                      style={{
-                        background: C.grad,
-                        color: '#fff',
-                        border: 'none',
-                        padding: '10px 18px',
-                        borderRadius: 10,
-                        fontWeight: 700,
-                        fontSize: 13.5,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        boxShadow: '0 4px 14px rgba(99,102,241,0.3)',
-                      }}
+                      className="inline-flex items-center gap-2 bg-gradient-to-br from-indigo-500 to-cyan-500 text-white border-none px-4.5 py-2.5 rounded-xl font-bold text-[13.5px] cursor-pointer whitespace-nowrap shadow-[0_4px_14px_rgba(99,102,241,0.3)] transition-all duration-200 hover:-translate-y-0.5"
                     >
                       <Icon d={CHECK_ICON} size={15} color="#fff" />
                       <span>View Solution Blueprint →</span>
@@ -743,125 +598,56 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
 
                   <button
                     onClick={() => navigate(`/session/${activeSessionId}/generating`)}
-                    style={{
-                      background: isCompleted ? C.surfaceAlt : C.grad,
-                      color: isCompleted ? C.textB : '#fff',
-                      border: isCompleted ? `1px solid ${C.border}` : 'none',
-                      padding: '10px 18px',
-                      borderRadius: 10,
-                      fontWeight: 700,
-                      fontSize: 13.5,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      boxShadow: isCompleted ? 'none' : '0 4px 14px rgba(99,102,241,0.3)',
-                    }}
+                    className={[
+                      'inline-flex items-center gap-2 px-4.5 py-2.5 rounded-xl font-bold text-[13.5px] cursor-pointer whitespace-nowrap transition-all duration-200',
+                      isCompleted
+                        ? 'bg-white border border-slate-200/80 text-slate-700 hover:bg-slate-50'
+                        : 'bg-gradient-to-br from-indigo-500 to-cyan-500 text-white border-none shadow-[0_4px_14px_rgba(99,102,241,0.3)] hover:-translate-y-0.5',
+                    ].join(' ')}
                   >
-                    <Icon d={SPARK_ICON} size={15} color={isCompleted ? C.primary : '#fff'} />
+                    <Icon d={SPARK_ICON} size={15} color={isCompleted ? '#6366f1' : '#fff'} />
                     <span>{isCompleted ? 'Re-Compile' : 'Compile Solution Blueprint →'}</span>
                   </button>
                 </div>
               </div>
 
               {/* Two-Column Discovery Layout */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 360px',
-                gap: 24,
-              }} className="discovery-grid">
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
 
                 {/* Left: Chat & Question Cards */}
-                <div className="discovery-chat-area" style={{
-                  background: C.surface,
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 20,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  height: 'calc(100vh - 240px)',
-                  minHeight: 620,
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.03)',
-                  overflow: 'hidden',
-                }}>
+                <div className="flex flex-col bg-white/90 backdrop-blur-xl border border-slate-200/70 rounded-[22px] shadow-[0_4px_16px_rgba(15,23,42,0.04)] overflow-hidden h-auto lg:h-[calc(100vh-240px)] min-h-[480px] lg:min-h-[620px]">
                   {/* Chat Subheader */}
-                  <div className="discovery-sub-header" style={{
-                    padding: '12px 16px',
-                    borderBottom: `1px solid ${C.border}`,
-                    background: C.surfaceAlt,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: 8,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 28, height: 28, borderRadius: 8, background: C.grad, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div className="flex items-center justify-between flex-wrap gap-2 px-4 py-3 border-b border-slate-200/70 bg-slate-50/80">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center shrink-0">
                         <Icon d={BOT_ICON} size={15} color="#fff" />
                       </div>
                       <div>
-                        <div style={{ fontSize: 13.5, fontWeight: 700, color: C.textH }}>
+                        <div className="text-[13.5px] font-bold text-slate-900">
                           AI Business Consultant (Chaos2Commit 2026)
                         </div>
-                        <div style={{ fontSize: 11, color: C.textSub }}>
+                        <div className="text-[11px] text-slate-400">
                           Validating requirements & architecture trade-offs
                         </div>
                       </div>
                     </div>
 
-                    <div style={{ fontSize: 12, fontWeight: 600, color: C.primaryDk }}>
+                    <div className="text-[12px] font-semibold text-indigo-600 whitespace-nowrap">
                       {answeredCount} of {totalQuestions} Clarified ({completionPercentage}%)
                     </div>
                   </div>
 
                   {/* Messages Feed */}
-                  <div style={{
-                    flex: 1,
-                    padding: '20px',
-                    overflowY: 'auto',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 18,
-                  }}>
+                  <div className="flex-1 p-4 sm:p-5 overflow-y-auto flex flex-col gap-4.5">
                     {messages.map((m) => {
                       const isAi = m.sender === 'ai';
                       return (
-                        <div
-                          key={m.id}
-                          style={{
-                            display: 'flex',
-                            gap: 12,
-                            alignItems: 'flex-start',
-                            flexDirection: isAi ? 'row' : 'row-reverse',
-                          }}
-                        >
-                          <div style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: '50%',
-                            background: isAi ? C.grad : C.primaryLt,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                            color: isAi ? '#fff' : C.primaryDk,
-                            fontWeight: 700,
-                            fontSize: 13,
-                          }}>
-                            {isAi ? <Icon d={BOT_ICON} size={16} color="#fff" /> : <Icon d={USER_ICON} size={16} color={C.primaryDk} />}
+                        <div key={m.id} className={`flex gap-3 items-start ${isAi ? 'flex-row' : 'flex-row-reverse'}`}>
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isAi ? 'bg-gradient-to-br from-indigo-500 to-cyan-500' : 'bg-indigo-50'}`}>
+                            {isAi ? <Icon d={BOT_ICON} size={16} color="#fff" /> : <Icon d={USER_ICON} size={16} color="#4f46e5" />}
                           </div>
 
-                          <div style={{
-                            maxWidth: '82%',
-                            background: isAi ? C.surfaceAlt : C.primaryLt,
-                            border: `1px solid ${isAi ? C.border : '#c7d2fe'}`,
-                            borderRadius: 14,
-                            padding: '12px 16px',
-                            color: C.textB,
-                            fontSize: 13.5,
-                            lineHeight: 1.6,
-                            whiteSpace: 'pre-line',
-                            boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
-                          }}>
+                          <div className={`max-w-[85%] sm:max-w-[82%] rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed whitespace-pre-line shadow-[0_1px_4px_rgba(15,23,42,0.03)] border ${isAi ? 'bg-slate-50/90 border-slate-200/70 text-slate-700' : 'bg-indigo-50/90 border-indigo-200/70 text-slate-700'}`}>
                             {m.text}
                           </div>
                         </div>
@@ -870,18 +656,9 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
 
                     {/* Question Cards */}
                     {questions.length > 0 && (
-                      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: C.textSub,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.04em',
-                        }}>
-                          <Icon d={SPARK_ICON} size={13} color={C.primary} />
+                      <div className="mt-2.5 flex flex-col gap-3.5">
+                        <div className="flex items-center gap-2 text-[11.5px] font-bold text-slate-400 uppercase tracking-[0.04em]">
+                          <Icon d={SPARK_ICON} size={13} color="#6366f1" />
                           Consultant Discovery Cards ({questions.length})
                         </div>
 
@@ -892,38 +669,14 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                           return (
                             <div
                               key={q.id || idx}
-                              style={{
-                                background: hasAnswer ? '#f8fafc' : '#ffffff',
-                                border: `1.5px solid ${hasAnswer ? '#a7f3d0' : '#e0e7ff'}`,
-                                borderRadius: 14,
-                                padding: '16px 18px',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
-                              }}
+                              className={`rounded-2xl p-4 sm:p-4.5 border-[1.5px] shadow-[0_2px_8px_rgba(15,23,42,0.03)] ${hasAnswer ? 'bg-slate-50/70 border-emerald-200' : 'bg-white border-indigo-100'}`}
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <span style={{
-                                    width: 22,
-                                    height: 22,
-                                    borderRadius: '50%',
-                                    background: hasAnswer ? C.success : C.primary,
-                                    color: '#fff',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: 11,
-                                    fontWeight: 800,
-                                  }}>
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-[22px] h-[22px] rounded-full text-white flex items-center justify-center text-[11px] font-extrabold shrink-0 ${hasAnswer ? 'bg-emerald-500' : 'bg-indigo-500'}`}>
                                     {hasAnswer ? '✓' : idx + 1}
                                   </span>
-                                  <span style={{
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    color: hasAnswer ? '#065f46' : C.primaryDk,
-                                    background: hasAnswer ? C.successLt : C.primaryLt,
-                                    padding: '2px 8px',
-                                    borderRadius: 6,
-                                  }}>
+                                  <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-md ${hasAnswer ? 'text-emerald-700 bg-emerald-50' : 'text-indigo-700 bg-indigo-50'}`}>
                                     {q.category || 'Architecture & Scope'}
                                   </span>
                                 </div>
@@ -931,81 +684,44 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                                 {hasAnswer && !isEditing && (
                                   <button
                                     onClick={() => setAnsweringQaId(q.id)}
-                                    style={{
-                                      background: 'none',
-                                      border: 'none',
-                                      color: C.primary,
-                                      fontSize: 12,
-                                      fontWeight: 600,
-                                      cursor: 'pointer',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 4,
-                                    }}
+                                    className="bg-transparent border-none text-indigo-600 text-[12px] font-semibold cursor-pointer flex items-center gap-1 p-0"
                                   >
-                                    <Icon d={EDIT_ICON} size={13} color={C.primary} /> Edit
+                                    <Icon d={EDIT_ICON} size={13} color="#6366f1" /> Edit
                                   </button>
                                 )}
                               </div>
 
-                              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.textH, margin: '0 0 8px 0', lineHeight: 1.45 }}>
+                              <h3 className="text-[14px] font-bold text-slate-900 m-0 mb-2 leading-snug">
                                 {q.question}
                               </h3>
 
                               {q.rationale && (
-                                <p style={{ fontSize: 12, color: C.textSub, margin: '0 0 10px 0' }}>
+                                <p className="text-[12px] text-slate-400 m-0 mb-2.5">
                                   💡 <em>Why this matters:</em> {q.rationale}
                                 </p>
                               )}
 
                               {hasAnswer && !isEditing && (
-                                <div style={{
-                                  background: '#ecfdf5',
-                                  border: '1px solid #bbf7d0',
-                                  borderRadius: 9,
-                                  padding: '10px 14px',
-                                  fontSize: 13,
-                                  color: '#065f46',
-                                  lineHeight: 1.5,
-                                }}>
+                                <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl px-3.5 py-2.5 text-[13px] text-emerald-800 leading-relaxed">
                                   <strong>Your Input:</strong> {q.answer}
                                 </div>
                               )}
 
                               {(!hasAnswer || isEditing) && (
-                                <div style={{ marginTop: 10 }}>
+                                <div className="mt-2.5">
                                   <textarea
                                     rows={3}
                                     placeholder="Type your answer, requirements, or constraints..."
                                     value={draftAnswers[q.id] || ''}
                                     onChange={e => setDraftAnswers({ ...draftAnswers, [q.id]: e.target.value })}
-                                    style={{
-                                      width: '100%',
-                                      padding: '10px 12px',
-                                      borderRadius: 8,
-                                      border: `1.5px solid ${C.border}`,
-                                      fontSize: 13,
-                                      color: C.textH,
-                                      outline: 'none',
-                                      boxSizing: 'border-box',
-                                      fontFamily: 'inherit',
-                                      resize: 'vertical',
-                                    }}
+                                    className="w-full px-3 py-2.5 rounded-lg border-[1.5px] border-slate-200 text-[13px] text-slate-900 outline-none box-border font-inherit resize-y transition-colors focus:border-indigo-400"
                                   />
-                                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                                  <div className="flex justify-end gap-2 mt-2">
                                     {isEditing && (
                                       <button
                                         type="button"
                                         onClick={() => setAnsweringQaId(null)}
-                                        style={{
-                                          background: 'none',
-                                          border: `1px solid ${C.border}`,
-                                          borderRadius: 7,
-                                          padding: '6px 12px',
-                                          fontSize: 12,
-                                          color: C.textM,
-                                          cursor: 'pointer',
-                                        }}
+                                        className="bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] text-slate-500 cursor-pointer transition-colors hover:bg-slate-50"
                                       >
                                         Cancel
                                       </button>
@@ -1014,19 +730,7 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                                       type="button"
                                       onClick={() => handleAnswerSubmit(q.id)}
                                       disabled={savingAnswer || !(draftAnswers[q.id] || '').trim()}
-                                      style={{
-                                        background: !(draftAnswers[q.id] || '').trim() ? C.borderMed : C.primary,
-                                        color: '#fff',
-                                        border: 'none',
-                                        borderRadius: 7,
-                                        padding: '7px 16px',
-                                        fontSize: 12.5,
-                                        fontWeight: 700,
-                                        cursor: !(draftAnswers[q.id] || '').trim() ? 'not-allowed' : 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 5,
-                                      }}
+                                      className={`flex items-center gap-1.5 text-white border-none rounded-lg px-4 py-1.5 text-[12.5px] font-bold transition-colors ${!(draftAnswers[q.id] || '').trim() ? 'bg-slate-300 cursor-not-allowed' : 'bg-indigo-600 cursor-pointer hover:bg-indigo-700'}`}
                                     >
                                       <Icon d={CHECK_ICON} size={13} color="#fff" />
                                       <span>Save Clarification</span>
@@ -1046,46 +750,19 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                   {/* Freeform Message Input Bar */}
                   <form
                     onSubmit={handleSendMessage}
-                    style={{
-                      padding: '12px 18px',
-                      borderTop: `1px solid ${C.border}`,
-                      background: C.surface,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                    }}
+                    className="flex items-center gap-2.5 px-4 sm:px-4.5 py-3 border-t border-slate-200/70 bg-white/95"
                   >
                     <input
                       type="text"
                       placeholder="Ask your AI Consultant questions (e.g. 'Can we use Azure Functions for ingestion?')..."
                       value={chatInput}
                       onChange={e => setChatInput(e.target.value)}
-                      style={{
-                        flex: 1,
-                        padding: '11px 16px',
-                        borderRadius: 10,
-                        border: `1.5px solid ${C.border}`,
-                        fontSize: 13.5,
-                        color: C.textH,
-                        outline: 'none',
-                        background: C.surfaceAlt,
-                      }}
+                      className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border-[1.5px] border-slate-200 text-[13.5px] text-slate-900 outline-none bg-slate-50/80 transition-colors focus:border-indigo-400"
                     />
                     <button
                       type="submit"
                       disabled={!chatInput.trim()}
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: 10,
-                        border: 'none',
-                        background: chatInput.trim() ? C.grad : C.surfaceAlt,
-                        color: chatInput.trim() ? '#fff' : C.textSub,
-                        cursor: chatInput.trim() ? 'pointer' : 'default',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
+                      className={`w-10 h-10 shrink-0 rounded-xl border-none flex items-center justify-center transition-all duration-200 ${chatInput.trim() ? 'bg-gradient-to-br from-indigo-500 to-cyan-500 text-white cursor-pointer hover:-translate-y-0.5' : 'bg-slate-100 text-slate-400 cursor-default'}`}
                     >
                       <Icon d={SEND_ICON} size={16} />
                     </button>
@@ -1093,33 +770,25 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                 </div>
 
                 {/* Right: Readiness Rail */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  <div style={{
-                    background: C.surface,
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 18,
-                    padding: 22,
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                      <h2 style={{ fontSize: 15, fontWeight: 800, margin: 0, color: C.textH }}>
+                <div className="flex flex-col gap-5">
+                  <div className="bg-white/90 backdrop-blur-xl border border-slate-200/70 rounded-2xl p-5.5 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-[15px] font-extrabold m-0 text-slate-900">
                         Discovery Readiness
                       </h2>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: C.primaryDk }}>
+                      <span className="text-[13px] font-extrabold text-indigo-600">
                         {completionPercentage}%
                       </span>
                     </div>
 
-                    <div style={{ width: '100%', height: 8, background: '#e2e8f0', borderRadius: 6, overflow: 'hidden', marginBottom: 14 }}>
-                      <div style={{
-                        width: `${completionPercentage}%`,
-                        height: '100%',
-                        background: C.grad,
-                        transition: 'width 0.4s ease',
-                      }} />
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-3.5">
+                      <div
+                        className="h-full bg-gradient-to-r from-indigo-500 to-cyan-500 transition-[width] duration-400 ease-out"
+                        style={{ width: `${completionPercentage}%` }}
+                      />
                     </div>
 
-                    <p style={{ fontSize: 12.5, color: C.textM, lineHeight: 1.5, margin: '0 0 16px' }}>
+                    <p className="text-[12.5px] text-slate-500 leading-relaxed m-0 mb-4">
                       {completionPercentage < 60
                         ? 'Answer key questions to eliminate ambiguity before compiling the solution architecture and BRD.'
                         : 'High discovery fidelity achieved! The AI engine has enough context to formulate high-confidence blueprints.'}
@@ -1128,22 +797,7 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                     <button
                       onClick={handleGenerateBlueprint}
                       disabled={compiling}
-                      style={{
-                        width: '100%',
-                        background: compiling ? C.borderMed : C.grad,
-                        color: '#fff',
-                        border: 'none',
-                        padding: '12px',
-                        borderRadius: 10,
-                        fontWeight: 700,
-                        fontSize: 13.5,
-                        cursor: compiling ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 8,
-                        boxShadow: '0 4px 14px rgba(99,102,241,0.3)',
-                      }}
+                      className={`w-full flex items-center justify-center gap-2 text-white border-none py-3 rounded-xl font-bold text-[13.5px] shadow-[0_4px_14px_rgba(99,102,241,0.3)] transition-all duration-200 ${compiling ? 'bg-slate-300 cursor-not-allowed' : 'bg-gradient-to-br from-indigo-500 to-cyan-500 cursor-pointer hover:-translate-y-0.5'}`}
                     >
                       <Icon d={SPARK_ICON} size={15} color="#fff" />
                       <span>{compiling ? 'Compiling Blueprint...' : 'Compile Solution Blueprint'}</span>
@@ -1151,50 +805,35 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
                   </div>
 
                   {/* Ingested Documents */}
-                  <div style={{
-                    background: C.surface,
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 18,
-                    padding: 20,
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                      <h3 style={{ fontSize: 14, fontWeight: 700, color: C.textH, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Icon d={FILE_ICON} size={16} color={C.primary} />
+                  <div className="bg-white/90 backdrop-blur-xl border border-slate-200/70 rounded-2xl p-5 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-[14px] font-bold text-slate-900 m-0 flex items-center gap-1.5">
+                        <Icon d={FILE_ICON} size={16} color="#6366f1" />
                         Attached Context Documents
                       </h3>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, color: C.textSub }}>
+                      <span className="text-[11.5px] font-bold text-slate-400">
                         {documents.length}
                       </span>
                     </div>
 
                     {documents.length === 0 ? (
-                      <p style={{ fontSize: 12.5, color: C.textSub, margin: 0 }}>
+                      <p className="text-[12.5px] text-slate-400 m-0">
                         No files attached. Initial prompt text is active as source material.
                       </p>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div className="flex flex-col gap-2">
                         {documents.map((d, i) => (
                           <div
                             key={d.id || i}
-                            style={{
-                              background: C.surfaceAlt,
-                              border: `1px solid ${C.border}`,
-                              borderRadius: 8,
-                              padding: '8px 12px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              fontSize: 12.5,
-                            }}
+                            className="flex items-center justify-between gap-2 bg-slate-50/80 border border-slate-200/70 rounded-lg px-3 py-2 text-[12.5px]"
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                              <Icon d={FILE_ICON} size={14} color={C.primary} />
-                              <span style={{ fontWeight: 600, color: C.textH, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Icon d={FILE_ICON} size={14} color="#6366f1" />
+                              <span className="font-semibold text-slate-900 overflow-hidden text-ellipsis whitespace-nowrap">
                                 {d.file_name}
                               </span>
                             </div>
-                            <span style={{ fontSize: 10.5, color: C.success, fontWeight: 700 }}>
+                            <span className="text-[10.5px] text-emerald-600 font-bold shrink-0">
                               Parsed
                             </span>
                           </div>
@@ -1212,99 +851,33 @@ To produce an implementation-ready enterprise architecture and structured BRD, I
 
       {/* Parallel Compilation Modal Overlay */}
       {compiling && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(15, 23, 42, 0.65)',
-          backdropFilter: 'blur(8px)',
-          zIndex: 2000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 20,
-        }}>
-          <div style={{
-            background: C.surface,
-            borderRadius: 22,
-            padding: '36px 32px',
-            maxWidth: 480,
-            width: '100%',
-            textAlign: 'center',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.25)',
-            border: `1px solid ${C.border}`,
-          }}>
-            <div style={{
-              width: 56,
-              height: 56,
-              borderRadius: '50%',
-              background: C.grad,
-              margin: '0 auto 18px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 6px 20px rgba(99,102,241,0.4)',
-            }}>
+        <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-md z-[2000] flex items-center justify-center p-5">
+          <div className="bg-white/95 backdrop-blur-xl rounded-[22px] px-7 sm:px-8 py-8 sm:py-9 max-w-[480px] w-full text-center shadow-[0_24px_64px_rgba(15,23,42,0.25)] border border-slate-200/70">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 mx-auto mb-4.5 flex items-center justify-center shadow-[0_6px_20px_rgba(99,102,241,0.4)]">
               <Icon d={SPARK_ICON} size={26} color="#fff" />
             </div>
 
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.textH, margin: '0 0 8px' }}>
+            <h2 className="text-[20px] font-extrabold text-slate-900 m-0 mb-2">
               Compiling Transformation Blueprint
             </h2>
-            <p style={{ fontSize: 13.5, color: C.textM, margin: '0 0 20px', lineHeight: 1.5 }}>
+            <p className="text-[13.5px] text-slate-500 m-0 mb-5 leading-relaxed">
               {compilationStage}
             </p>
 
-            <div style={{ width: '100%', height: 8, background: '#e2e8f0', borderRadius: 6, overflow: 'hidden', marginBottom: 12 }}>
-              <div style={{
-                width: `${compilationProgress}%`,
-                height: '100%',
-                background: C.grad,
-                transition: 'width 0.4s ease',
-              }} />
+            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-3">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-cyan-500 transition-[width] duration-400 ease-out"
+                style={{ width: `${compilationProgress}%` }}
+              />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.textSub, fontWeight: 600 }}>
+            <div className="flex justify-between text-[12px] text-slate-400 font-semibold">
               <span>Parallel Multi-Agent Synthesis</span>
               <span>{compilationProgress}%</span>
             </div>
           </div>
         </div>
       )}
-
-      {/* Keyframe & Responsive Styles */}
-      <style>{`
-        @keyframes spinFast {
-          to { transform: rotate(360deg); }
-        }
-        @media (max-width: 990px) {
-          .discovery-grid { grid-template-columns: 1fr !important; }
-          .discovery-main {
-            margin-left: 0 !important;
-            padding: 80px 16px 32px !important;
-            overflow-x: hidden !important;
-            max-width: 100vw !important;
-          }
-          .discovery-mobile-toggle { display: inline-flex !important; }
-        }
-        @media (max-width: 640px) {
-          .discovery-main {
-            padding: 76px 10px 24px !important;
-            overflow-x: hidden !important;
-          }
-          .discovery-header-actions {
-            width: 100% !important;
-            flex-direction: column !important;
-            align-items: stretch !important;
-            gap: 8px !important;
-          }
-          .discovery-header-actions button { width: 100% !important; justify-content: center !important; }
-          .discovery-chat-area { height: auto !important; min-height: 480px !important; }
-          .discovery-sub-header { gap: 6px !important; }
-        }
-        @media (max-width: 380px) {
-          .discovery-main { padding: 72px 8px 20px !important; }
-        }
-      `}</style>
     </div>
   );
 }

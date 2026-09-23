@@ -12,6 +12,7 @@ import sessionRoutes from './routes/session.routes.js';
 import exportRoutes from './routes/export.routes.js';
 import llmRoutes from './routes/llm.routes.js';
 import aiRoutes from './routes/ai.routes.js';
+import paymentRoutes from './routes/payment.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { compileAiClient } from './services/ai/compileAiClient.js';
 
@@ -55,6 +56,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/llm', llmRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/payment', paymentRoutes);
 
 // Global Error Handler
 app.use(errorHandler);

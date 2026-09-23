@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/layout/Navbar';
 import DashboardSidebar from '../components/layout/DashboardSidebar';
-import { getStoredToken, getStoredUser, getStoredSidebarCollapsed } from '../utils/cookieUtils';
+import { getStoredToken, getStoredUser, getStoredSidebarCollapsed, getUserCredits, deductUserCredit, getUserRole, setUserCredits, syncUserCreditsWithBackend } from '../utils/cookieUtils';
+import { SUPPORTED_LANGUAGES, getCurrentLanguage, setCurrentLanguage, t, useTranslation } from '../utils/i18n';
 
 /* ─── Shared Theme Palette ─── */
 const C = {
@@ -47,6 +48,11 @@ const INFO_ICON   = 'M12 16v-4M12 8h.01M22 12A10 10 0 1 1 2 12a10 10 0 0 1 20 0z
 const LAYERS_ICON = 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5';
 const CLOUD_ICON  = 'M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z';
 const CHAT_ICON   = 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z';
+const LINK_ICON   = 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71';
+const MIC_ICON    = 'M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8';
+const STOP_ICON   = 'M6 6h12v12H6z';
+const GLOBE_ICON  = 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 0c2.5 4 4 8 4 10s-1.5 6-4 10m0-20c-2.5 4-4 8-4 10s1.5 6 4 10m-8-10h16';
+const COIN_ICON   = 'M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6';
 
 /* ─── Industry Quick-Start Templates (Futurrizon Business Transformation) ─── */
 const TEMPLATES = [
@@ -122,6 +128,312 @@ export default function InputScreen() {
   const [targetTimeline, setTargetTimeline] = useState('Production MVP (8–12 Weeks)');
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
+
+  // 4-in-1 Input Mode: 'text' | 'doc' | 'url' | 'voice'
+  const [inputMode, setInputMode] = useState('text');
+
+  // Multilingual, Role & Credits State
+  const { t, currentLanguage } = useTranslation();
+  const [currentRole, setCurrentRole] = useState(() => getUserRole());
+  const [credits, setCredits] = useState(() => getUserCredits());
+
+  useEffect(() => {
+    syncUserCreditsWithBackend().then(bal => setCredits(bal));
+    const handleRole = (e) => setCurrentRole(e.detail?.role || getUserRole());
+    const handleCredits = (e) => setCredits(e.detail?.credits || getUserCredits());
+    window.addEventListener('role_changed', handleRole);
+    window.addEventListener('credits_changed', handleCredits);
+    return () => {
+      window.removeEventListener('role_changed', handleRole);
+      window.removeEventListener('credits_changed', handleCredits);
+    };
+  }, []);
+  const isViewer = currentRole === 'viewer';
+
+  // URL Scraping State
+  const [urlInput, setUrlInput] = useState('');
+  const [isScrapingUrl, setIsScrapingUrl] = useState(false);
+
+  // Voice Recording State & Real Web Speech API
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [voiceVolume, setVoiceVolume] = useState(0);
+  const [voiceError, setVoiceError] = useState('');
+  const recognitionRef = useRef(null);
+  const audioStreamRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const voiceTimerRef = useRef(null);
+  const animationFrameRef = useRef(null);
+
+  // Handle Language Change (UI localization ONLY — does NOT overwrite user prompt!)
+  const handleLanguageChange = (langCode) => {
+    setCurrentLanguage(langCode);
+  };
+
+  // Explicit user-triggered demo loader (ONLY when user explicitly clicks an example button)
+  const handleLoadDemoPreset = (presetKey) => {
+    if (presetKey === 'gov_hi') {
+      setCurrentLanguage('hi');
+      setTitle('स्मार्ट सिटी ई-गवर्नेंस नागरिक सेवा पोर्टल');
+      setProblemPrompt(t('samplePrompts.smartGovernance', 'hi'));
+      setIndustry('Public Sector / Government');
+    } else if (presetKey === 'gov_gu') {
+      setCurrentLanguage('gu');
+      setTitle('સ્માર્ટ સિટી ઈ-ગવર્નન્સ નાગરિક સેવા પોર્ટલ');
+      setProblemPrompt(t('samplePrompts.smartGovernance', 'gu'));
+      setIndustry('Public Sector / Government');
+    } else if (presetKey === 'hr_en') {
+      setCurrentLanguage('en');
+      setTitle('HR & Employee Onboarding Automation');
+      setProblemPrompt(t('samplePrompts.hrConsultancy', 'en'));
+      setIndustry('Enterprise Technology');
+    }
+  };
+
+  // Real Web Scraper via Backend API
+  const handleScrapeUrl = async () => {
+    if (!urlInput.trim()) {
+      alert('Please enter a valid URL to extract requirements.');
+      return;
+    }
+    setIsScrapingUrl(true);
+    try {
+      const res = await fetch('http://localhost:5000/api/ai/scrape-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: urlInput.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Could not scrape requirements from URL.');
+      }
+
+      if (data.title && !title.trim()) {
+        setTitle(data.title.slice(0, 80));
+      }
+
+      setProblemPrompt(prev => {
+        const trimmed = prev.trim();
+        return trimmed ? `${trimmed}\n\n${data.extractedContent}` : data.extractedContent;
+      });
+
+      setInputMode('text');
+    } catch (err) {
+      alert(`Scraping error: ${err.message}`);
+    } finally {
+      setIsScrapingUrl(false);
+    }
+  };
+
+  // Real Microphone & Web Speech Recognition
+  const handleToggleVoiceRecord = async () => {
+    if (!isRecording) {
+      setVoiceError('');
+      setLiveTranscript('');
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        setVoiceError('Web Speech API is not supported in this browser. Please use Chrome, Edge, or Safari.');
+        return;
+      }
+
+      try {
+        // Request actual microphone stream
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStreamRef.current = stream;
+
+        // Real Web Audio API for volume metering
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            const audioCtx = new AudioContextClass();
+            audioContextRef.current = audioCtx;
+            const source = audioCtx.createMediaStreamSource(stream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 64;
+            source.connect(analyser);
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const checkVolume = () => {
+              if (!audioStreamRef.current) return;
+              analyser.getByteFrequencyData(dataArray);
+              let sum = 0;
+              for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+              const avg = sum / dataArray.length;
+              setVoiceVolume(Math.min(100, Math.round((avg / 128) * 100)));
+              animationFrameRef.current = requestAnimationFrame(checkVolume);
+            };
+            checkVolume();
+          }
+        } catch (e) {
+          console.warn('Real audio meter setup notice:', e);
+        }
+
+        // Initialize SpeechRecognition with user's selected language
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+
+        const langMap = {
+          hi: 'hi-IN',
+          gu: 'gu-IN',
+          es: 'es-ES',
+          fr: 'fr-FR',
+          en: 'en-US',
+        };
+        recognition.lang = langMap[currentLanguage] || 'en-US';
+
+        let finalAccumulated = '';
+
+        recognition.onresult = (event) => {
+          let interim = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const res = event.results[i];
+            if (res.isFinal) {
+              finalAccumulated += res[0].transcript + ' ';
+            } else {
+              interim += res[0].transcript;
+            }
+          }
+          const spoken = (finalAccumulated + interim).trim();
+          setLiveTranscript(spoken);
+        };
+
+        recognition.onerror = (event) => {
+          console.warn('Speech recognition notice:', event.error);
+          if (event.error === 'not-allowed') {
+            setVoiceError('Microphone permission was denied. Please allow microphone access in your browser address bar.');
+            setIsRecording(false);
+          }
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+
+        setIsRecording(true);
+        setRecordSeconds(0);
+        voiceTimerRef.current = setInterval(() => {
+          setRecordSeconds(s => s + 1);
+        }, 1000);
+
+      } catch (err) {
+        console.error('Microphone access failed:', err);
+        setVoiceError('Could not open microphone: ' + (err.message || 'Permission denied. Please grant microphone access.'));
+        setIsRecording(false);
+      }
+
+    } else {
+      // User clicked stop
+      setIsRecording(false);
+      if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+        recognitionRef.current = null;
+      }
+
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null;
+      }
+
+      if (audioContextRef.current) {
+        try { audioContextRef.current.close(); } catch (e) {}
+        audioContextRef.current = null;
+      }
+
+      setVoiceVolume(0);
+
+      // Append ONLY what the user actually spoke into the microphone!
+      if (liveTranscript.trim()) {
+        const spokenWords = liveTranscript.trim();
+        setProblemPrompt(prev => {
+          const trimmedPrev = prev.trim();
+          return trimmedPrev ? `${trimmedPrev}\n\n${spokenWords}` : spokenWords;
+        });
+
+        if (!title.trim()) {
+          const words = spokenWords.split(' ').slice(0, 6).join(' ');
+          setTitle(words.charAt(0).toUpperCase() + words.slice(1));
+        }
+
+        setLiveTranscript('');
+        setInputMode('text'); // switch to review text
+      } else {
+        setVoiceError('No speech was detected from your microphone. Please click the mic and speak clearly into your device.');
+      }
+    }
+  };
+
+  // Real Document Extract to Text Prompt
+  const handleExtractDocToContext = async () => {
+    if (uploadedFiles.length === 0) return;
+
+    let extractedText = '';
+    for (const file of uploadedFiles) {
+      try {
+        const content = await readFileContent(file);
+        if (content && content.trim()) {
+          extractedText += `\n\n[Ingested from: ${file.name}]\n${content.slice(0, 3000)}`;
+        }
+      } catch (e) {
+        console.warn('Could not read file:', file.name, e);
+      }
+    }
+
+    if (extractedText.trim()) {
+      setProblemPrompt(prev => {
+        const trimmed = prev.trim();
+        return trimmed ? `${trimmed}${extractedText}` : extractedText.trim();
+      });
+      if (!title.trim() && uploadedFiles[0]) {
+        setTitle(uploadedFiles[0].name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '));
+      }
+      setInputMode('text');
+    } else {
+      alert('No readable text could be extracted from the uploaded document.');
+    }
+  };
+
+  const readFileContent = (file) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      if (file.type.includes('text') || file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.json') || file.name.endsWith('.csv')) {
+        reader.onload = (e) => resolve(e.target.result || '');
+        reader.onerror = () => resolve('');
+        reader.readAsText(file);
+      } else {
+        reader.onload = (e) => {
+          try {
+            const buffer = new Uint8Array(e.target.result);
+            let text = '';
+            let word = '';
+            for (let i = 0; i < Math.min(buffer.length, 50000); i++) {
+              const byte = buffer[i];
+              if (byte >= 32 && byte <= 126) {
+                word += String.fromCharCode(byte);
+              } else if (byte === 10 || byte === 13) {
+                if (word.length >= 3) text += word + '\n';
+                word = '';
+              } else {
+                if (word.length >= 3) text += word + ' ';
+                word = '';
+              }
+            }
+            if (word.length >= 3) text += word;
+            const cleaned = text.replace(/\s+/g, ' ').trim();
+            resolve(cleaned || `[Binary Document: ${file.name}, Size: ${(file.size / 1024).toFixed(1)} KB]`);
+          } catch {
+            resolve(`[Document: ${file.name}, Size: ${(file.size / 1024).toFixed(1)} KB]`);
+          }
+        };
+        reader.onerror = () => resolve('');
+        reader.readAsArrayBuffer(file);
+      }
+    });
+  };
 
   // Submission & AI Generation State
   const [submitting, setSubmitting] = useState(false);
@@ -233,6 +545,19 @@ export default function InputScreen() {
     e.preventDefault();
     setErrorNotice('');
 
+    if (isViewer) {
+      alert('🔒 Access Restricted: Creation of new transformation blueprints is disabled in Viewer (Read-Only) mode. Switch your role to Developer or Admin in the top navigation bar to proceed.');
+      return;
+    }
+
+    // 0. Enforce Coin Cost (1 Coin per Generation)
+    const availableCredits = getUserCredits();
+    if (availableCredits <= 0) {
+      alert('🪙 Insufficient Coins: Blueprint generation costs 1 coin. You have 0 coins remaining. Redirecting to Pricing to recharge...');
+      navigate('/pricing');
+      return;
+    }
+
     if (validationResult && !validationResult.isValid) {
       setShowInvalidModal(true);
       setErrorNotice(validationResult.reason || 'Please provide a valid business requirement or SOP before proceeding.');
@@ -284,6 +609,11 @@ ${problemPrompt.trim()}`.trim();
 
       if (!sessionRes.ok) {
         const errData = await sessionRes.json().catch(() => ({}));
+        if (sessionRes.status === 402 || errData.error === 'INSUFFICIENT_CREDITS') {
+          alert('🪙 Insufficient Coins: You have 0 coins left. Please purchase coins on the Pricing page.');
+          navigate('/pricing');
+          return;
+        }
         if (errData.validation && !errData.validation.isValid) {
           setValidationResult(errData.validation);
           setShowInvalidModal(true);
@@ -321,7 +651,11 @@ ${problemPrompt.trim()}`.trim();
         await Promise.all(uploadTasks);
       }
 
-      setProgressMsg('AI Discovery Engine active. Redirecting to Discovery Q&A...');
+      const remaining = typeof sessionData.remainingCredits === 'number'
+        ? setUserCredits(sessionData.remainingCredits)
+        : deductUserCredit(1);
+      setCredits(remaining);
+      setProgressMsg(`✓ 1 Coin Deducted (${remaining} coin${remaining === 1 ? '' : 's'} remaining). AI Discovery Engine active. Redirecting to Q&A...`);
       setTimeout(() => {
         navigate(`/session/${sessionId}`);
       }, 700);
@@ -499,44 +833,75 @@ ${problemPrompt.trim()}`.trim();
         <div style={{ maxWidth: 1140, margin: '0 auto' }}>
 
           {/* Breadcrumb & Header */}
-          <div style={{ marginBottom: 28 }}>
+          <div style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.textSub, marginBottom: 8 }}>
               <span style={{ cursor: 'pointer', color: C.primary, fontWeight: 600 }} onClick={() => navigate('/dashboard')}>
-                Dashboard
+                {t('input.breadcrumbHome') || 'Dashboard'}
               </span>
               <span>/</span>
-              <span>New Blueprint</span>
+              <span>{t('input.breadcrumbNew') || 'New Blueprint'}</span>
               <span>/</span>
-              <span style={{ color: C.textB, fontWeight: 600 }}>Stage 1: Business Intake</span>
+              <span style={{ color: C.textB, fontWeight: 600 }}>{t('input.stageIntake') || 'Stage 1: Business Intake'}</span>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
               <div>
                 <h1 style={{ fontSize: 28, fontWeight: 800, color: C.textH, margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-                  Business Transformation Intake
+                  {t('input.title') || 'Business Transformation Intake'}
                 </h1>
                 <p style={{ fontSize: 14, color: C.textM, margin: 0, maxWidth: 640 }}>
-                  Convert your business idea, legacy challenge, or operational SOP into an implementation-ready enterprise blueprint powered by AI Business Analysis.
+                  {t('input.subtitle') || 'Convert your business idea, legacy challenge, or operational SOP into an implementation-ready enterprise blueprint powered by AI Business Analysis.'}
                 </p>
               </div>
 
-              {/* Progress Stage Badge */}
-              <div style={{
-                background: C.surface,
-                border: `1px solid ${C.border}`,
-                borderRadius: 12,
-                padding: '10px 18px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
-              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {/* Real Live Coin Balance Badge */}
+                <div
+                  onClick={() => navigate('/pricing')}
+                  style={{
+                    background: credits > 0 ? '#ecfdf5' : '#fef2f2',
+                    border: `1.5px solid ${credits > 0 ? '#a7f3d0' : '#fecaca'}`,
+                    borderRadius: 12,
+                    padding: '8px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                  }}
+                  title="Click to recharge coins on Pricing page"
+                >
+                  <span style={{ fontSize: 22 }}>🪙</span>
+                  <div>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: credits > 0 ? '#047857' : '#b91c1c', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Balance (1 Coin / Gen)
+                    </div>
+                    <div style={{ fontSize: 13.5, fontWeight: 800, color: credits > 0 ? '#065f46' : '#991b1b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{credits} {credits === 1 ? 'Coin' : 'Coins'}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: C.primary, textDecoration: 'underline' }}>
+                        {credits === 0 ? '+ Recharge' : 'Get More'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Progress Stage Badge */}
+                <div style={{
+                  background: C.surface,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 12,
+                  padding: '10px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                }}>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Transformation Pipeline
                   </div>
                   <div style={{ fontSize: 13.5, fontWeight: 800, color: C.primaryDk }}>
-                    Step 1 of 3: Context Intake
+                    {t('input.stepIndicator') || 'Step 1 of 3: Context Intake'}
                   </div>
                 </div>
                 <div style={{
@@ -557,8 +922,208 @@ ${problemPrompt.trim()}`.trim();
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Quick-Start Transformation Templates */}
+          {/* RBAC Viewer Alert Notice */}
+          {isViewer && (
+            <div style={{
+              background: '#fef2f2',
+              border: '1.5px solid #fca5a5',
+              borderRadius: 14,
+              padding: '14px 20px',
+              marginBottom: 24,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              boxShadow: '0 2px 8px rgba(239,68,68,0.06)',
+            }}>
+              <span style={{ fontSize: 24 }}>🔒</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 13.5, color: '#991b1b', marginBottom: 2 }}>
+                  {t('rbac.viewerNotice') || 'Viewing in Read-Only Mode'}
+                </div>
+                <div style={{ fontSize: 12.5, color: '#b91c1c', lineHeight: 1.5 }}>
+                  You are exploring with <strong>Viewer</strong> role. Blueprint creation, intake submission, and live deployment are disabled. Switch to <strong>Developer</strong> or <strong>Admin</strong> in the top navigation bar to create blueprints.
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Multilingual Selector & Credits Status Bar */}
+          <div style={{
+            background: C.surface,
+            border: `1px solid ${C.border}`,
+            borderRadius: 16,
+            padding: '16px 20px',
+            marginBottom: 24,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 14,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+          }}>
+            {/* Left: Language Selection & Presets */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.textB, fontSize: 13, fontWeight: 700 }}>
+                <Icon d={GLOBE_ICON} size={16} color={C.primary} />
+                <span>Input / Output Language:</span>
+              </div>
+              <select
+                value={currentLanguage}
+                onChange={(e) => handleLanguageChange(e.target.value)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: `1.5px solid ${C.border}`,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: C.textH,
+                  background: C.surfaceAlt,
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                {SUPPORTED_LANGUAGES.map(lang => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.flag} {lang.name} ({lang.nativeName})
+                  </option>
+                ))}
+              </select>
+
+              {/* 1-Click Multilingual Demo Presets */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: C.textSub, fontWeight: 600 }}>Try Example:</span>
+                <button
+                  type="button"
+                  onClick={() => handleLoadDemoPreset('gov_hi')}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #c7d2fe',
+                    background: '#ffffff',
+                    color: C.primaryDk,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                  title="लोड करें: ई-गवर्नेंस नागरिक सेवा पोर्टल"
+                >
+                  🏛️ ई-गवर्नेंस (Hindi)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLoadDemoPreset('gov_gu')}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #c7d2fe',
+                    background: '#ffffff',
+                    color: C.primaryDk,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                  title="લોડ કરો: ઈ-ગવર્નન્સ નાગરિક સેવા પોર્ટલ"
+                >
+                  🏛️ ઈ-ગવર્નન્સ (Gujarati)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLoadDemoPreset('hr_en')}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #e2e8f0',
+                    background: '#ffffff',
+                    color: C.textB,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                  title="Load HR Onboarding Example"
+                >
+                  💼 HR Onboarding
+                </button>
+              </div>
+            </div>
+
+            {/* Right: Credits Counter & Balance */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                borderRadius: 20,
+                background: '#fef3c7',
+                border: '1px solid #fde68a',
+                color: '#92400e',
+                fontSize: 12.5,
+                fontWeight: 700,
+              }}>
+                <span>🪙</span>
+                <span>{credits} Credits Available</span>
+              </div>
+              <span style={{ fontSize: 11, color: C.textSub }}>
+                (1 credit per blueprint compilation)
+              </span>
+            </div>
+          </div>
+
+          {/* 4-in-1 Input Mode Selector */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: 12,
+            marginBottom: 24,
+          }} className="input-modes-grid">
+            {[
+              { id: 'text', label: '1. Text Idea', icon: CHAT_ICON, desc: 'Describe problem or use templates' },
+              { id: 'doc', label: '2. Upload Doc [PDF/PPT]', icon: UPLOAD_ICON, desc: 'PDF, DOCX, PPTX extraction' },
+              { id: 'url', label: '3. Paste URL', icon: LINK_ICON, desc: 'Webpage SOP scraper & specs' },
+              { id: 'voice', label: '4. Voice Record', icon: MIC_ICON, desc: 'Audio recording & transcription' },
+            ].map((mode) => {
+              const active = inputMode === mode.id;
+              return (
+                <div
+                  key={mode.id}
+                  onClick={() => setInputMode(mode.id)}
+                  style={{
+                    padding: '14px 16px',
+                    borderRadius: 14,
+                    background: active ? '#ffffff' : C.surface,
+                    border: `2px solid ${active ? C.primary : C.border}`,
+                    cursor: 'pointer',
+                    boxShadow: active ? '0 6px 18px rgba(99,102,241,0.12)' : 'none',
+                    transition: 'all 0.18s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      background: active ? C.primaryLt : C.surfaceAlt,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Icon d={mode.icon} size={15} color={active ? C.primary : C.textM} />
+                    </div>
+                    <span style={{ fontSize: 13.5, fontWeight: 800, color: active ? C.primary : C.textH }}>
+                      {mode.label}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 11, color: C.textSub, marginLeft: 36 }}>
+                    {mode.desc}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
           <div style={{ marginBottom: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <h2 style={{ fontSize: 14.5, fontWeight: 700, color: C.textB, margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -742,6 +1307,247 @@ ${problemPrompt.trim()}`.trim();
                       {problemPrompt.length} characters
                     </span>
                   </div>
+
+                  {/* Interactive URL Scraper Panel (Mode: url) */}
+                  {inputMode === 'url' && (
+                    <div style={{
+                      background: '#f0f9ff',
+                      border: '1.5px solid #bae6fd',
+                      borderRadius: 14,
+                      padding: 18,
+                      marginBottom: 18,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <Icon d={LINK_ICON} size={18} color="#0284c7" />
+                        <span style={{ fontSize: 14, fontWeight: 700, color: '#0369a1' }}>
+                          Web Scraper & Enterprise Spec Extractor
+                        </span>
+                      </div>
+                      <p style={{ fontSize: 12.5, color: '#0c4a6e', margin: '0 0 12px' }}>
+                        Paste any public URL (SOP doc, Confluence/Notion page, or RFP link) to automatically scrape requirements and pre-fill context:
+                      </p>
+                      <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                        <input
+                          type="url"
+                          placeholder="https://example.gov.in/digital-citizen-services.html"
+                          value={urlInput}
+                          onChange={(e) => setUrlInput(e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: '10px 14px',
+                            borderRadius: 9,
+                            border: '1.5px solid #7dd3fc',
+                            fontSize: 13.5,
+                            outline: 'none',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleScrapeUrl}
+                          disabled={isScrapingUrl}
+                          style={{
+                            background: '#0284c7',
+                            color: '#fff',
+                            border: 'none',
+                            padding: '10px 18px',
+                            borderRadius: 9,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
+                        >
+                          {isScrapingUrl ? 'Scraping Specs...' : 'Scrape & Extract'}
+                        </button>
+                      </div>
+                      {/* Sample URLs */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: '#0284c7', fontWeight: 600 }}>Try sample URL:</span>
+                        <button
+                          type="button"
+                          onClick={() => setUrlInput('https://digitalindia.gov.in/citizen-services-sop.html')}
+                          style={{
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: '#ffffff',
+                            border: '1px solid #7dd3fc',
+                            color: '#0369a1',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          🏛️ Citizen Services SOP
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setUrlInput('https://enterprise.acme.com/hr-onboarding-spec.html')}
+                          style={{
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: '#ffffff',
+                            border: '1px solid #7dd3fc',
+                            color: '#0369a1',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          💼 HR Onboarding Spec
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Interactive Voice Recording Studio (Mode: voice) */}
+                  {inputMode === 'voice' && (
+                    <div style={{
+                      background: isRecording ? '#fef2f2' : '#f5f3ff',
+                      border: `1.5px solid ${isRecording ? '#fca5a5' : '#ddd6fe'}`,
+                      borderRadius: 14,
+                      padding: 20,
+                      marginBottom: 18,
+                      textAlign: 'center',
+                      transition: 'all 0.25s',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+                        <Icon d={MIC_ICON} size={20} color={isRecording ? '#ef4444' : '#7c3aed'} />
+                        <span style={{ fontSize: 14.5, fontWeight: 800, color: isRecording ? '#b91c1c' : '#6d28d9' }}>
+                          {isRecording ? 'Listening to Live Microphone Stream...' : 'AI Voice Intake Studio'}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: 12.5, color: C.textM, margin: '0 0 16px' }}>
+                        Click the microphone and speak your problem statement in English, हिन्दी (Hindi), or ગુજરાતી (Gujarati):
+                      </p>
+
+                      {/* Mic Button & Waveform */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+                        <button
+                          type="button"
+                          onClick={handleToggleVoiceRecord}
+                          style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: '50%',
+                            background: isRecording ? '#ef4444' : C.primary,
+                            border: 'none',
+                            color: '#fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            boxShadow: isRecording ? '0 0 0 10px rgba(239, 68, 68, 0.25)' : '0 4px 20px rgba(99, 102, 241, 0.35)',
+                            transition: 'all 0.2s',
+                          }}
+                          title={isRecording ? 'Click to Stop Recording' : 'Click to Open Microphone'}
+                        >
+                          <Icon d={isRecording ? STOP_ICON : MIC_ICON} size={28} color="#fff" />
+                        </button>
+
+                        {/* Real Audio Volume Waveform */}
+                        {isRecording && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 32 }}>
+                            {[10, 20, 16, 28, 14, 26, 12, 24, 18, 30, 15, 22].map((baseH, idx) => {
+                              const dynamicHeight = Math.max(6, Math.min(32, Math.round(baseH * (voiceVolume > 0 ? (voiceVolume / 45) : 0.4))));
+                              return (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    width: 4,
+                                    height: `${dynamicHeight}px`,
+                                    background: voiceVolume > 20 ? '#ef4444' : '#f87171',
+                                    borderRadius: 2,
+                                    transition: 'height 0.08s ease',
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: 13, fontWeight: 700, color: isRecording ? '#ef4444' : C.textM }}>
+                          {isRecording ? `● Recording: 00:${recordSeconds.toString().padStart(2, '0')} (Click Mic to Stop & Save)` : 'Click Mic to Start Speaking'}
+                        </div>
+
+                        {/* Live Transcribed Words Stream */}
+                        {liveTranscript && (
+                          <div style={{
+                            background: '#ffffff',
+                            border: '1.5px solid #a5b4fc',
+                            borderRadius: 10,
+                            padding: '12px 16px',
+                            maxWidth: 640,
+                            width: '100%',
+                            fontSize: 13.5,
+                            color: '#1e1b4b',
+                            textAlign: 'left',
+                            boxShadow: '0 2px 8px rgba(99,102,241,0.08)',
+                          }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                              Live Microphone Stream:
+                            </div>
+                            <span style={{ fontStyle: 'italic', lineHeight: 1.5 }}>
+                              "{liveTranscript}"
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Voice Error Notification */}
+                        {voiceError && (
+                          <div style={{
+                            background: '#fef2f2',
+                            border: '1px solid #fca5a5',
+                            borderRadius: 8,
+                            padding: '8px 14px',
+                            fontSize: 12.5,
+                            color: '#991b1b',
+                            maxWidth: 580,
+                            textAlign: 'center',
+                          }}>
+                            ⚠️ {voiceError}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Mode: doc Banner with Quick Extract */}
+                  {inputMode === 'doc' && uploadedFiles.length > 0 && (
+                    <div style={{
+                      background: '#fef3c7',
+                      border: '1px solid #fde68a',
+                      borderRadius: 12,
+                      padding: '12px 16px',
+                      marginBottom: 16,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Icon d={FILE_ICON} size={16} color="#d97706" />
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#92400e' }}>
+                          {uploadedFiles.length} file(s) uploaded.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleExtractDocToContext}
+                        style={{
+                          background: '#d97706',
+                          color: '#fff',
+                          border: 'none',
+                          padding: '6px 12px',
+                          borderRadius: 8,
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ⚡ Extract & Auto-Fill Context
+                      </button>
+                    </div>
+                  )}
 
                   <textarea
                     rows={7}

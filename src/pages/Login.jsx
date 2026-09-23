@@ -1,62 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../components/layout/Navbar';
-import { setStoredToken, setStoredUser, getStoredUser, markOnboardingCompleted, getOnboardingData } from '../utils/cookieUtils';
+import { Button, Card, GradientText, Icon, Spinner } from '../components/common/ui';
+import {
+  setStoredToken, setStoredUser, getStoredUser,
+  markOnboardingCompleted, getOnboardingData,
+} from '../utils/cookieUtils';
 
-/* ─── keyframes injected once ─── */
-const KEYFRAMES = `
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(24px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes floatSlow {
-    0%, 100% { transform: translateY(0px) rotate(0deg); }
-    50% { transform: translateY(-8px) rotate(1deg); }
-  }
-  @keyframes pulseRing {
-    0%   { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
-    70%  { transform: scale(1); box-shadow: 0 0 0 10px rgba(99,102,241,0); }
-    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99,102,241,0); }
-  }
-  @keyframes spinSlow {
-    to { transform: rotate(360deg); }
-  }
-`;
-
-function StyleTag() {
-  return <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />;
-}
-
-/* ─── shared palette ─── */
-const C = {
-  bg:        '#f6f7fb',
-  surface:   '#ffffff',
-  surfaceAlt:'#f0f2f9',
-  border:    '#e4e7f0',
-  borderMed: '#d0d4e8',
-  primary:   '#6366f1',
-  primaryDk: '#4f46e5',
-  primaryLt: '#eef2ff',
-  grad:      'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)',
-  textH:     '#0f172a',
-  textB:     '#334155',
-  textM:     '#64748b',
-  textSub:   '#94a3b8',
-  error:     '#ef4444',
-  errorLt:   '#fef2f2',
-  errorBdr:  '#fca5a5',
-  success:   '#10b981',
-};
-
-/* ─── icon helper ─── */
-function Icon({ d, size = 18, color = 'currentColor' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-      <path d={d} />
-    </svg>
-  );
-}
+/* ─── Icon paths ─── */
 const ZAP   = 'M13 2L3 14h9l-1 8 10-12h-9l1-8z';
 const MAIL  = 'M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2zM22 6l-10 7L2 6';
 const LOCK  = 'M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zM7 11V7a5 5 0 0 1 10 0v4';
@@ -64,42 +15,19 @@ const EYE   = 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 1 0 0 6 3
 const EYOFF = 'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22';
 const ARROW = 'M5 12h14M12 5l7 7-7 7';
 const WARN  = 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01';
-const SPARK = 'M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83';
 
-/* ─── card tilt ─── */
-function TiltCard({ children, style = {} }) {
-  const ref = useRef(null);
-  const move = useCallback((e) => {
-    const el = ref.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - 0.5;
-    const y = (e.clientY - r.top) / r.height - 0.5;
-    el.style.transform = `perspective(800px) rotateY(${x * 6}deg) rotateX(${-y * 6}deg) scale(1.01)`;
-  }, []);
-  const leave = useCallback(() => {
-    if (ref.current) ref.current.style.transform = 'perspective(800px) rotateY(0) rotateX(0) scale(1)';
-  }, []);
-  return (
-    <div ref={ref} onMouseMove={move} onMouseLeave={leave}
-      style={{ transition: 'transform 0.2s ease', willChange: 'transform', ...style }}>
-      {children}
-    </div>
-  );
-}
-
-/* ─── field component ─── */
+/* ─── Premium input field ─── */
 function Field({ label, id, type = 'text', value, onChange, placeholder, error, icon, rightEl }) {
   const [focused, setFocused] = useState(false);
   return (
-    <div style={{ marginBottom: 18 }}>
-      <label htmlFor={id} style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.textB, marginBottom: 6 }}>
+    <div className="flex flex-col gap-1.5 mb-5">
+      <label htmlFor={id} className="text-sm font-semibold text-foreground">
         {label}
       </label>
-      <div style={{ position: 'relative' }}>
+      <div className="relative flex items-center">
         {icon && (
-          <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-            <Icon d={icon} size={16} color={focused ? C.primary : C.textSub} />
+          <div className="absolute left-3.5 pointer-events-none">
+            <Icon d={icon} size={16} color={focused ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))'} />
           </div>
         )}
         <input
@@ -110,55 +38,34 @@ function Field({ label, id, type = 'text', value, onChange, placeholder, error, 
           placeholder={placeholder}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          style={{
-            width: '100%',
-            padding: icon ? '11px 42px 11px 42px' : '11px 42px 11px 14px',
-            borderRadius: 10,
-            border: `1.5px solid ${error ? C.error : focused ? C.primary : C.border}`,
-            background: error ? C.errorLt : focused ? '#fafbff' : C.surface,
-            fontSize: 14,
-            color: C.textH,
-            outline: 'none',
-            transition: 'all 0.2s',
-            boxShadow: focused && !error ? '0 0 0 3px rgba(99,102,241,0.14)' : 'none',
-            boxSizing: 'border-box',
-          }}
+          className={[
+            'w-full py-2.5 pr-10 border rounded-[var(--radius)] bg-card text-foreground text-[0.9375rem] placeholder:text-muted-foreground',
+            'focus:outline-none focus:ring-2 focus:ring-ring/25 transition-all duration-150',
+            error ? 'border-destructive focus:ring-destructive/20 bg-destructive/5' : 'border-border focus:border-ring',
+            icon ? 'pl-10' : 'pl-3.5',
+          ].join(' ')}
         />
         {rightEl && (
-          <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }}>
-            {rightEl}
-          </div>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">{rightEl}</div>
         )}
       </div>
       {error && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5 }}>
-          <Icon d={WARN} size={13} color={C.error} />
-          <p style={{ color: C.error, fontSize: 12, fontWeight: 500 }}>{error}</p>
-        </div>
+        <p className="flex items-center gap-1.5 text-xs text-destructive font-medium">
+          <Icon d={WARN} size={12} color="hsl(var(--destructive))" /> {error}
+        </p>
       )}
     </div>
   );
 }
 
-function Divider({ label }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
-      <div style={{ flex: 1, height: 1, background: C.border }} />
-      <span style={{ color: C.textSub, fontSize: 12, whiteSpace: 'nowrap' }}>{label}</span>
-      <div style={{ flex: 1, height: 1, background: C.border }} />
-    </div>
-  );
-}
-
+/* ─── Google SSO button (UI only) ─── */
 function GoogleButton({ label }) {
   return (
     <button
       type="button"
-      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, width: '100%', padding: '11px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.surface, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: C.textB, transition: 'all 0.2s' }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = C.primary; e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.06)'; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.boxShadow = 'none'; }}
+      className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-[var(--radius)] border border-border bg-card text-foreground text-sm font-semibold hover:bg-secondary hover:border-ring/40 transition-all duration-150"
     >
-      <svg width="18" height="18" viewBox="0 0 24 24">
+      <svg width="17" height="17" viewBox="0 0 24 24">
         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
         <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
         <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -169,15 +76,20 @@ function GoogleButton({ label }) {
   );
 }
 
-function Spinner() {
+/* ─── Divider with label ─── */
+function OrDivider({ label }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'spinSlow 0.7s linear infinite' }}>
-      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-    </svg>
+    <div className="flex items-center gap-3 my-5">
+      <div className="flex-1 h-px bg-border" />
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <div className="flex-1 h-px bg-border" />
+    </div>
   );
 }
 
-/* ════════════ LOGIN PAGE ════════════ */
+/* ════════════════════════════════════
+   LOGIN PAGE
+════════════════════════════════════ */
 export default function Login() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: '', password: '' });
@@ -185,14 +97,6 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [globalError, setGlobalError] = useState('');
-
-  /* subtle mouse parallax for ambient background orbs */
-  const [mouse, setMouse] = useState({ x: 0, y: 0 });
-  useEffect(() => {
-    const fn = (e) => setMouse({ x: e.clientX / window.innerWidth - 0.5, y: e.clientY / window.innerHeight - 0.5 });
-    window.addEventListener('mousemove', fn, { passive: true });
-    return () => window.removeEventListener('mousemove', fn);
-  }, []);
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
 
@@ -212,7 +116,6 @@ export default function Login() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({});
     setLoading(true);
-
     try {
       const res = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
@@ -221,11 +124,7 @@ export default function Login() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Login failed');
-
-      // Store session token in cookies
       setStoredToken(data.token);
-
-      // Merge backend user with any stored workspace/onboarding preferences
       const existingUser = getStoredUser() || {};
       const obData = getOnboardingData() || {};
       const mergedUser = {
@@ -235,10 +134,7 @@ export default function Login() {
         onboardingCompleted: true,
       };
       setStoredUser(mergedUser);
-      // Mark onboarding as completed for this user account so it is never shown again on login
       markOnboardingCompleted(mergedUser);
-
-      // Directly to dashboard per requirement: onboarding is NOT shown when logging into an account
       navigate('/dashboard');
     } catch (err) {
       setGlobalError(err.message || 'Backend connection error. Make sure backend is running on port 5000.');
@@ -248,200 +144,99 @@ export default function Login() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: C.bg,
-      fontFamily: 'system-ui,-apple-system,sans-serif',
-      display: 'flex',
-      flexDirection: 'column',
-      position: 'relative',
-      overflowX: 'hidden',
-    }}>
-      <StyleTag />
-      {/* Shared common Navbar */}
+    <div className="min-h-screen bg-background font-sans overflow-x-hidden relative flex flex-col">
       <Navbar />
 
-      {/* Ambient animated parallax background orbs */}
-      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
-        <div style={{
-          position: 'absolute',
-          borderRadius: '50%',
-          width: 580,
-          height: 580,
-          top: '-10%',
-          left: '-5%',
-          background: 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 68%)',
-          transform: `translate(${mouse.x * -20}px, ${mouse.y * -20}px)`,
-          transition: 'transform 0.8s ease',
-        }} />
-        <div style={{
-          position: 'absolute',
-          borderRadius: '50%',
-          width: 480,
-          height: 480,
-          bottom: '5%',
-          right: '-5%',
-          background: 'radial-gradient(circle, rgba(6,182,212,0.1) 0%, transparent 68%)',
-          transform: `translate(${mouse.x * 20}px, ${mouse.y * 20}px)`,
-          transition: 'transform 0.8s ease',
-        }} />
+      {/* Background blobs */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-20 -left-20 w-[500px] h-[500px] rounded-full opacity-40"
+          style={{ background: 'radial-gradient(circle, hsl(239 84% 67% / 0.1) 0%, transparent 70%)' }} />
+        <div className="absolute bottom-10 right-0 w-[400px] h-[400px] rounded-full opacity-30"
+          style={{ background: 'radial-gradient(circle, hsl(189 94% 43% / 0.09) 0%, transparent 70%)' }} />
       </div>
 
-      {/* Main container */}
-      <main className="login-main" style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '100px 24px 48px',
-        position: 'relative',
-        zIndex: 1,
-      }}>
-        <div style={{ width: '100%', maxWidth: 440, animation: 'fadeUp 0.7s cubic-bezier(0.16,1,0.3,1) forwards' }}>
-          
-          <TiltCard className="login-card" style={{
-            background: C.surface,
-            border: `1px solid ${C.border}`,
-            borderRadius: 22,
-            padding: '38px 34px',
-            boxShadow: '0 8px 36px rgba(99,102,241,0.08), 0 2px 6px rgba(0,0,0,0.04)',
-          }}>
-            {/* Header badge & icon */}
-            <div style={{ textAlign: 'center', marginBottom: 28 }}>
-              <div style={{
-                width: 50,
-                height: 50,
-                borderRadius: 14,
-                background: C.grad,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 14px',
-                boxShadow: '0 4px 18px rgba(99,102,241,0.32)',
-                animation: 'pulseRing 3s infinite',
-              }}>
+      <main className="flex-1 flex items-center justify-center px-5 py-24 relative z-10">
+        <div className="w-full max-w-[420px] animate-fade-up">
+
+          {/* Card */}
+          <div className="bg-card border border-border rounded-2xl shadow-xl p-8 sm:p-10">
+            {/* Header */}
+            <div className="text-center mb-8">
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-primary animate-pulse-soft"
+                style={{ background: 'var(--grad)' }}
+              >
                 <Icon d={ZAP} size={22} color="#fff" />
               </div>
-              <h1 style={{ fontSize: 24, fontWeight: 800, color: C.textH, marginBottom: 6, letterSpacing: '-0.5px' }}>
-                Welcome back
-              </h1>
-              <p style={{ fontSize: 14, color: C.textM }}>
-                Sign in to your Compile workspace
-              </p>
+              <h1 className="text-2xl font-extrabold text-foreground tracking-tight mb-1.5">Welcome back</h1>
+              <p className="text-muted-foreground text-sm">Sign in to your Compile workspace</p>
             </div>
 
-            {/* Google SSO */}
+            {/* Google */}
             <GoogleButton label="Continue with Google" />
-            <Divider label="or sign in with email" />
+            <OrDivider label="or sign in with email" />
 
             {/* Error banner */}
             {globalError && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '12px 14px', borderRadius: 10, background: C.errorLt, border: `1px solid ${C.errorBdr}`, marginBottom: 18 }}>
-                <Icon d={WARN} size={15} color={C.error} />
-                <p style={{ color: '#991b1b', fontSize: 13, lineHeight: 1.5, margin: 0 }}>{globalError}</p>
+              <div className="flex items-start gap-2.5 p-3.5 rounded-[var(--radius)] bg-destructive/10 border border-destructive/25 mb-5">
+                <Icon d={WARN} size={15} color="hsl(var(--destructive))" className="shrink-0 mt-0.5" />
+                <p className="text-destructive text-[13px] leading-relaxed">{globalError}</p>
               </div>
             )}
 
+            {/* Form */}
             <form onSubmit={handleSubmit} noValidate>
-              <Field
-                label="Email address"
-                id="email"
-                type="email"
-                value={form.email}
-                onChange={set('email')}
-                placeholder="you@company.com"
-                error={errors.email}
-                icon={MAIL}
-              />
-              <Field
-                label="Password"
-                id="password"
-                type={showPw ? 'text' : 'password'}
-                value={form.password}
-                onChange={set('password')}
-                placeholder="••••••••"
-                error={errors.password}
-                icon={LOCK}
+              <Field label="Email address" id="email" type="email" value={form.email}
+                onChange={set('email')} placeholder="you@company.com" error={errors.email} icon={MAIL} />
+              <Field label="Password" id="password" type={showPw ? 'text' : 'password'}
+                value={form.password} onChange={set('password')} placeholder="••••••••"
+                error={errors.password} icon={LOCK}
                 rightEl={
                   <button type="button" onClick={() => setShowPw(v => !v)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center', color: C.textSub }}>
-                    <Icon d={showPw ? EYOFF : EYE} size={16} color={C.textSub} />
+                    className="text-muted-foreground hover:text-foreground transition-colors p-0.5 flex">
+                    <Icon d={showPw ? EYOFF : EYE} size={16} />
                   </button>
                 }
               />
 
-              {/* Forgot password */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -8, marginBottom: 22 }}>
-                <Link to="/forgot-password" style={{ fontSize: 13, color: C.primary, textDecoration: 'none', fontWeight: 600 }}>
+              <div className="flex justify-end -mt-2 mb-5">
+                <Link to="/forgot-password" className="text-[13px] text-primary font-semibold hover:underline">
                   Forgot password?
                 </Link>
               </div>
 
-              {/* Submit button with hover shimmer effect */}
               <button
                 type="submit"
                 disabled={loading}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-[var(--radius)] text-white font-bold text-[15px] transition-all duration-200 hover:-translate-y-px disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  width: '100%',
-                  padding: '13px',
-                  borderRadius: 11,
-                  background: loading ? C.borderMed : C.grad,
-                  border: 'none',
-                  color: '#fff',
-                  fontSize: 15,
-                  fontWeight: 700,
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  boxShadow: loading ? 'none' : '0 4px 18px rgba(99,102,241,0.35)',
-                  transition: 'all 0.18s ease',
-                }}
-                onMouseEnter={e => {
-                  if (!loading) {
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 6px 24px rgba(99,102,241,0.48)';
-                  }
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 4px 18px rgba(99,102,241,0.35)';
+                  background: loading ? 'hsl(var(--muted))' : 'var(--grad)',
+                  boxShadow: loading ? 'none' : 'var(--shadow-primary)',
+                  color: loading ? 'hsl(var(--muted-foreground))' : '#fff',
                 }}
               >
                 {loading
-                  ? <><Spinner /> Signing in...</>
+                  ? <><Spinner size={16} /> Signing in...</>
                   : <>Sign in <Icon d={ARROW} size={17} color="#fff" /></>
                 }
               </button>
             </form>
-          </TiltCard>
+          </div>
 
-          {/* Bottom links */}
-          <div style={{ textAlign: 'center', marginTop: 22 }}>
-            <p style={{ fontSize: 14, color: C.textM }}>
+          {/* Footer links */}
+          <div className="text-center mt-5">
+            <p className="text-sm text-muted-foreground">
               Don't have an account?{' '}
-              <Link to="/signup" style={{ color: C.primary, fontWeight: 700, textDecoration: 'none' }}>
+              <Link to="/signup" className="text-primary font-bold hover:underline">
                 Sign up free →
               </Link>
             </p>
-            <p style={{ marginTop: 10, fontSize: 12, color: C.textSub }}>
-              Protected by enterprise-grade 256-bit encryption · MySQL Database
+            <p className="mt-2.5 text-xs text-muted-foreground/70">
+              Protected by 256-bit encryption · MySQL database
             </p>
           </div>
         </div>
       </main>
-
-      <style>{`
-        @media (max-width: 480px) {
-          .login-main { padding: 84px 14px 32px !important; }
-          .login-card { padding: 24px 18px !important; border-radius: 16px !important; }
-        }
-        @media (max-width: 360px) {
-          .login-main { padding: 72px 10px 24px !important; }
-          .login-card { padding: 20px 14px !important; }
-        }
-      `}</style>
     </div>
   );
 }

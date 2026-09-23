@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/layout/Navbar';
 import DashboardSidebar from '../components/layout/DashboardSidebar';
-import { getStoredToken, getStoredUser, setStoredUser, clearAuthCookies, setCookie, COOKIE_KEYS, getStoredSidebarCollapsed } from '../utils/cookieUtils';
+import { getStoredToken, getStoredUser, setStoredUser, clearAuthCookies, setCookie, COOKIE_KEYS, getStoredSidebarCollapsed, getUserRole, setUserRole, normalizeFrontendRole, syncUserRoleWithBackend } from '../utils/cookieUtils';
 
 /* ─── Unified Theme Palette ─── */
 const C = {
@@ -38,6 +38,7 @@ function Icon({ d, size = 18, color = 'currentColor', style = {} }) {
 }
 
 const USER_ICON     = 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z';
+const TEAM_ICON     = 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm14 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75';
 const SPARK_ICON    = 'M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83';
 const KEY_ICON      = 'M21 2l-2 2m-2-2l2 2m7 0a5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5 5 5 0 0 1 5 5zm-5 5l-7 7-4-4L2 15l4 4 7-7';
 const SHIELD_ICON   = 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z';
@@ -61,7 +62,7 @@ export default function Settings() {
   const [allSessions, setAllSessions] = useState([]);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'ai' | 'keys' | 'security' | 'system'
+  const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'team' | 'ai' | 'keys' | 'security' | 'system'
 
   // Tab 1: Profile Form
   const [nameInput, setNameInput] = useState('');
@@ -69,8 +70,15 @@ export default function Settings() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState({ type: '', text: '' });
 
+  // Tab: Team & RBAC
+  const [activeRole, setActiveRole] = useState(() => getUserRole());
+  const [workspaceMembers, setWorkspaceMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [teamMsg, setTeamMsg] = useState({ type: '', text: '' });
+  const [updatingMemberId, setUpdatingMemberId] = useState(null);
+
   // Tab 2: AI Preferences (Persisted locally / in cookies)
-  const [llmModel, setLlmModel] = useState('gemini-3.6-flash');
+  const [llmModel, setLlmModel] = useState('gemini-3.8-flash');
   const [aiTone, setAiTone] = useState('enterprise-balanced');
   const [qaDepth, setQaDepth] = useState('standard');
   const [targetCloud, setTargetCloud] = useState('azure');
@@ -93,6 +101,23 @@ export default function Settings() {
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState({ type: '', text: '' });
 
+  const fetchMembers = async (token) => {
+    setLoadingMembers(true);
+    try {
+      const res = await fetch('http://localhost:5000/api/auth/members', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.members) setWorkspaceMembers(data.members);
+      }
+    } catch (err) {
+      console.warn('Could not load workspace members:', err);
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
   useEffect(() => {
     const token = getStoredToken();
     if (!token) {
@@ -104,7 +129,22 @@ export default function Settings() {
     if (current) {
       setNameInput(current.name || '');
       setCompanyInput(current.company || '');
+      setActiveRole(normalizeFrontendRole(current.role));
     }
+
+    // Sync role from backend
+    syncUserRoleWithBackend().then(r => setActiveRole(r));
+
+    // Fetch team members for RBAC tab
+    fetchMembers(token);
+
+    // Listen to role changes
+    const onRoleChanged = (e) => {
+      const r = e.detail?.role || getUserRole();
+      setActiveRole(r);
+      setUser(getStoredUser());
+    };
+    window.addEventListener('role_changed', onRoleChanged);
 
     // Load AI preferences from localStorage if exists
     try {
@@ -131,7 +171,53 @@ export default function Settings() {
         if (data.sessions) setAllSessions(data.sessions);
       })
       .catch(() => {});
+
+    return () => window.removeEventListener('role_changed', onRoleChanged);
   }, [navigate]);
+
+  // Handle switching active user's own role
+  const handleSwitchMyRole = async (newRole) => {
+    setTeamMsg({ type: '', text: '' });
+    try {
+      const updated = await setUserRole(newRole);
+      setActiveRole(updated);
+      setUser(getStoredUser());
+      setTeamMsg({ type: 'success', text: `✓ Your active role is now set to "${newRole.toUpperCase()}" and synced with the backend.` });
+      const token = getStoredToken();
+      if (token) fetchMembers(token);
+    } catch (err) {
+      setTeamMsg({ type: 'error', text: 'Failed to update role in backend.' });
+    }
+  };
+
+  // Handle Admin updating a member's role
+  const handleUpdateMemberRole = async (memberId, newRole) => {
+    const token = getStoredToken();
+    if (!token) return;
+    setUpdatingMemberId(memberId);
+    setTeamMsg({ type: '', text: '' });
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/auth/users/${memberId}/role`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ role: newRole }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to update member role.');
+
+      setTeamMsg({ type: 'success', text: `✓ ${data.message || 'Member role updated successfully.'}` });
+      fetchMembers(token);
+    } catch (err) {
+      setTeamMsg({ type: 'error', text: err.message });
+    } finally {
+      setUpdatingMemberId(null);
+    }
+  };
 
   // Handle Profile Update
   const handleSaveProfile = async (e) => {
@@ -348,6 +434,7 @@ export default function Settings() {
           }}>
             {[
               { id: 'profile', label: 'Account & Organization', icon: USER_ICON },
+              { id: 'team', label: 'Team & RBAC Roles', icon: TEAM_ICON },
               { id: 'ai', label: 'AI Reasoning Engine', icon: SPARK_ICON },
               { id: 'keys', label: 'API Keys & Integrations', icon: KEY_ICON },
               { id: 'security', label: 'Security & Privacy', icon: SHIELD_ICON },
@@ -533,6 +620,259 @@ export default function Settings() {
           {/* ═══════════════════════════════════════════════════════
               TAB 2: AI REASONING ENGINE PREFERENCES
           ═══════════════════════════════════════════════════════════ */}
+          {/* ═══════════════════════════════════════════════════════
+              TAB: TEAM & RBAC ROLES (BACKEND CONNECTED)
+          ═══════════════════════════════════════════════════════ */}
+          {activeTab === 'team' && (
+            <div className="settings-card" style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 18, padding: '28px 32px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 6 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: C.textH }}>
+                  Team & Role-Based Access Control (RBAC)
+                </h2>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: activeRole === 'admin' ? C.primaryLt : activeRole === 'developer' ? '#ecfdf5' : '#f1f5f9',
+                  border: `1px solid ${activeRole === 'admin' ? C.primary : activeRole === 'developer' ? '#10b981' : '#cbd5e1'}`,
+                  color: activeRole === 'admin' ? C.primaryDk : activeRole === 'developer' ? '#065f46' : '#475569',
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                }}>
+                  <span>● Active Role: {activeRole.toUpperCase()}</span>
+                </div>
+              </div>
+              <p style={{ fontSize: 13.5, color: C.textM, margin: '0 0 24px' }}>
+                Enforce granular permissions for Blueprint AI generation, section editing, and solution deployment.
+              </p>
+
+              {teamMsg.text && (
+                <div style={{
+                  padding: '12px 16px',
+                  borderRadius: 10,
+                  marginBottom: 20,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  background: teamMsg.type === 'success' ? C.successLt : '#fee2e2',
+                  color: teamMsg.type === 'success' ? '#065f46' : '#991b1b',
+                  border: `1px solid ${teamMsg.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
+                }}>
+                  {teamMsg.text}
+                </div>
+              )}
+
+              {/* 1. Switch Current Active Role */}
+              <div style={{ background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, marginBottom: 24 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.textH, marginBottom: 6 }}>
+                  Switch Your Active Workspace Role
+                </div>
+                <p style={{ fontSize: 12.5, color: C.textM, margin: '0 0 16px' }}>
+                  Changes are persisted directly to the backend database and update your cryptographic JWT token.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                  {[
+                    { id: 'admin', title: 'Admin (Owner)', desc: 'Full privileges: Generation, section regeneration, team management & deployment.' },
+                    { id: 'developer', title: 'Developer (Member)', desc: 'Standard access: Create and generate blueprints, edit sections, and view artifacts.' },
+                    { id: 'viewer', title: 'Viewer (Read-Only)', desc: 'Auditor access: Inspect blueprints, exports and diagrams without modification rights.' },
+                  ].map(r => {
+                    const isCurrent = activeRole === r.id;
+                    return (
+                      <div
+                        key={r.id}
+                        onClick={() => handleSwitchMyRole(r.id)}
+                        style={{
+                          background: isCurrent ? C.surface : C.surfaceAlt,
+                          border: `2px solid ${isCurrent ? C.primary : C.border}`,
+                          borderRadius: 12,
+                          padding: 16,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          boxShadow: isCurrent ? '0 4px 12px rgba(99,102,241,0.12)' : 'none',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontSize: 13.5, fontWeight: 800, color: isCurrent ? C.primary : C.textH }}>
+                            {r.title}
+                          </span>
+                          {isCurrent && (
+                            <span style={{ fontSize: 11, fontWeight: 800, color: C.primary, background: C.primaryLt, padding: '2px 8px', borderRadius: 10 }}>
+                              Selected
+                            </span>
+                          )}
+                        </div>
+                        <p style={{ fontSize: 12, color: C.textM, margin: 0, lineHeight: 1.4 }}>
+                          {r.desc}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Permission Matrix */}
+              <div style={{ background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, marginBottom: 24 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.textH, marginBottom: 12 }}>
+                  RBAC Permission Matrix
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1.5px solid ${C.border}`, color: C.textSub }}>
+                        <th style={{ padding: '8px 12px', fontWeight: 700 }}>Action / Capability</th>
+                        <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'center' }}>Admin</th>
+                        <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'center' }}>Developer</th>
+                        <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'center' }}>Viewer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { name: 'Generate AI Architecture & BRD', admin: true, dev: true, viewer: false },
+                        { name: 'Regenerate Single Deliverable Sections', admin: true, dev: true, viewer: false },
+                        { name: 'Upload & Process Enterprise SOPs', admin: true, dev: true, viewer: false },
+                        { name: 'Export PDF / Word / JSON Schemas', admin: true, dev: true, viewer: true },
+                        { name: 'View Diagrams & Interactive Sandbox', admin: true, dev: true, viewer: true },
+                        { name: 'Manage Team Member Roles & Policies', admin: true, dev: false, viewer: false },
+                        { name: 'Trigger Automated Cloud Sandbox Deploy', admin: true, dev: false, viewer: false },
+                      ].map((row, idx) => (
+                        <tr key={idx} style={{ borderBottom: `1px solid ${C.border}` }}>
+                          <td style={{ padding: '10px 12px', color: C.textB, fontWeight: 600 }}>{row.name}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'center', color: row.admin ? '#10b981' : '#ef4444', fontWeight: 700 }}>
+                            {row.admin ? '✓ Allowed' : '✗ Restricted'}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'center', color: row.dev ? '#10b981' : '#ef4444', fontWeight: 700 }}>
+                            {row.dev ? '✓ Allowed' : '✗ Restricted'}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'center', color: row.viewer ? '#10b981' : '#ef4444', fontWeight: 700 }}>
+                            {row.viewer ? '✓ Allowed' : '✗ Restricted'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 3. Workspace Team Members */}
+              <div style={{ background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.textH }}>
+                      Workspace Team Members ({workspaceMembers.length})
+                    </div>
+                    <div style={{ fontSize: 12, color: C.textM }}>
+                      Administrators can assign and update member roles below.
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const token = getStoredToken();
+                      if (token) fetchMembers(token);
+                    }}
+                    style={{
+                      background: C.surface,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 8,
+                      padding: '6px 12px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: C.primary,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Refresh List
+                  </button>
+                </div>
+
+                {loadingMembers ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: C.textM, fontSize: 13 }}>
+                    Loading workspace members...
+                  </div>
+                ) : workspaceMembers.length === 0 ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: C.textM, fontSize: 13 }}>
+                    No other team members found in this workspace.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: `1.5px solid ${C.border}`, color: C.textSub }}>
+                          <th style={{ padding: '10px 12px', fontWeight: 700 }}>Member Name</th>
+                          <th style={{ padding: '10px 12px', fontWeight: 700 }}>Email Address</th>
+                          <th style={{ padding: '10px 12px', fontWeight: 700 }}>Assigned Role</th>
+                          <th style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right' }}>Role Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workspaceMembers.map(m => {
+                          const isMe = m.id === user?.id;
+                          const currentNorm = normalizeFrontendRole(m.role);
+                          return (
+                            <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                              <td style={{ padding: '12px', fontWeight: 700, color: C.textH }}>
+                                {m.name} {isMe && <span style={{ color: C.primary, fontSize: 11 }}>(You)</span>}
+                              </td>
+                              <td style={{ padding: '12px', color: C.textM, fontFamily: 'monospace', fontSize: 12 }}>
+                                {m.email}
+                              </td>
+                              <td style={{ padding: '12px' }}>
+                                <span style={{
+                                  fontSize: 11.5,
+                                  fontWeight: 800,
+                                  padding: '3px 9px',
+                                  borderRadius: 6,
+                                  background: currentNorm === 'admin' ? C.primaryLt : currentNorm === 'developer' ? '#ecfdf5' : '#f1f5f9',
+                                  color: currentNorm === 'admin' ? C.primaryDk : currentNorm === 'developer' ? '#065f46' : '#475569',
+                                  textTransform: 'uppercase',
+                                }}>
+                                  {currentNorm}
+                                </span>
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'right' }}>
+                                <select
+                                  value={currentNorm}
+                                  disabled={updatingMemberId === m.id}
+                                  onChange={(e) => {
+                                    if (isMe) {
+                                      handleSwitchMyRole(e.target.value);
+                                    } else {
+                                      handleUpdateMemberRole(m.id, e.target.value);
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '5px 10px',
+                                    borderRadius: 7,
+                                    border: `1px solid ${C.border}`,
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    color: C.textH,
+                                    background: C.surface,
+                                    cursor: 'pointer',
+                                    outline: 'none',
+                                  }}
+                                >
+                                  <option value="admin">Admin (Full Access)</option>
+                                  <option value="developer">Developer (Edit & View)</option>
+                                  <option value="viewer">Viewer (Read Only)</option>
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════
+              TAB 2: AI REASONING ENGINE PREFERENCES
+          ═══════════════════════════════════════════════════════ */}
           {activeTab === 'ai' && (
             <div className="settings-card" style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 18, padding: '28px 32px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
               <h2 style={{ fontSize: 18, fontWeight: 800, margin: '0 0 6px', color: C.textH }}>
@@ -576,7 +916,7 @@ export default function Settings() {
                       outline: 'none',
                     }}
                   >
-                    <option value="gemini-3.6-flash">Google Gemini 3.6 Flash (Active & Connected — Fast Enterprise Reasoning)</option>
+                    <option value="gemini-3.8-flash">Google Gemini 3.8 Flash (Active & Connected — Ultra Fast Reasoning)</option>
                     <option value="gpt-4o">OpenAI GPT-4o / GPT-4o-mini (Configured & Multimodal)</option>
                     <option value="claude-3-5-sonnet">Claude 3.5 Sonnet (Deep Analysis & Enterprise Architecture)</option>
                     <option value="local-hybrid">Local Smart Synthesis Engine (Zero API Cost, Built-in Fallback)</option>
@@ -726,7 +1066,7 @@ export default function Settings() {
                         Google Gemini API Key
                       </label>
                       <span style={{ fontSize: 10.5, fontWeight: 700, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: 6, border: '1px solid #a7f3d0' }}>
-                        ● Live Connected (gemini-3.6-flash)
+                        ● Live Connected (gemini-3.8-flash)
                       </span>
                     </div>
                     <button
